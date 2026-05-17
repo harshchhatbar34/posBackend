@@ -20,7 +20,7 @@ async function main() {
   await prisma.user.deleteMany({});
 
   // ---- Create Users ----
-  const hashedPassword = await bcrypt.hash("password123", 12);
+  const hashedPassword = await bcrypt.hash("Admin@123", 12);
 
   const superAdmin = await prisma.user.upsert({
     where: { email: "harshchhatbar34@gmail.com" },
@@ -34,11 +34,11 @@ async function main() {
   });
 
   const admin = await prisma.user.upsert({
-    where: { email: "hasrshitkhatri38@gmail.com" },
+    where: { email: "harshitkhatri38@gmail.com" },
     update: {},
     create: {
       name: "Harshit Khatri",
-      email: "hasrshitkhatri38@gmail.com",
+      email: "harshitkhatri38@gmail.com",
       password: hashedPassword,
       role: Role.ADMIN,
     },
@@ -174,8 +174,8 @@ async function main() {
 
   console.log("\n🎉 Database seeded successfully!");
   console.log("\n📋 Login Credentials:");
-  console.log("  Super Admin: harshchhatbar34@gmail.com / password123");
-  console.log("  Admin:       hasrshitkhatri38@gmail.com / password123");
+  console.log("  Super Admin: harshchhatbar34@gmail.com / Admin@123");
+  console.log("  Admin:       harshitkhatri38@gmail.com / Admin@123");
 }
 
 main()
