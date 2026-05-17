@@ -1,0 +1,26 @@
+import { NextRequest } from "next/server";
+import { inventoryService } from "@/modules/inventory/inventory.service";
+import { authenticate, authorize } from "@/middleware/auth";
+import { successResponse } from "@/utils/api-response";
+import { handleError } from "@/utils/error-handler";
+import { emitInventoryUpdate } from "@/sockets/socket";
+
+type RouteParams = { params: Promise<{ id: string }> };
+
+// POST /api/inventory/[id]/usage
+export async function POST(request: NextRequest, { params }: RouteParams) {
+  try {
+    const user = await authenticate(request);
+    authorize("SUPER_ADMIN", "ADMIN")(user.role);
+    const { id } = await params;
+    const body = await request.json();
+    const result = await inventoryService.recordUsage(id, body, user.id);
+    
+    // Trigger realtime socket event
+    emitInventoryUpdate(result);
+
+    return successResponse(result, "Usage recorded successfully");
+  } catch (error) {
+    return handleError(error);
+  }
+}
