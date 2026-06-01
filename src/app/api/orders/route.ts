@@ -3,7 +3,6 @@ import { orderService } from "@/modules/orders/order.service";
 import { authenticate } from "@/middleware/auth";
 import { successResponse } from "@/utils/api-response";
 import { handleError } from "@/utils/error-handler";
-import { emitOrderNew } from "@/sockets/socket";
 
 // GET /api/orders
 export async function GET(request: NextRequest) {
@@ -35,9 +34,6 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const result = await orderService.create(body, user.id);
     
-    // Trigger realtime socket event
-    emitOrderNew(result);
-
     return successResponse(result, "Order created successfully", 201);
   } catch (error) {
     return handleError(error);

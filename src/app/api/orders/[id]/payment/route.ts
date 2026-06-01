@@ -3,7 +3,6 @@ import { orderService } from "@/modules/orders/order.service";
 import { authenticate } from "@/middleware/auth";
 import { successResponse } from "@/utils/api-response";
 import { handleError } from "@/utils/error-handler";
-import { emitDashboardUpdate } from "@/sockets/socket";
 
 type RouteParams = { params: Promise<{ id: string }> };
 
@@ -15,9 +14,6 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     const body = await request.json();
     const result = await orderService.recordPayment(id, body, user.id);
     
-    // Trigger realtime socket updates
-    emitDashboardUpdate({ type: "payment_recorded", orderId: id });
-
     return successResponse(result, "Payment recorded successfully");
   } catch (error) {
     return handleError(error);

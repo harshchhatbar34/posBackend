@@ -3,7 +3,6 @@ import { orderService } from "@/modules/orders/order.service";
 import { authenticate, authorize } from "@/middleware/auth";
 import { successResponse } from "@/utils/api-response";
 import { handleError } from "@/utils/error-handler";
-import { emitKitchenUpdate, emitOrderUpdate } from "@/sockets/socket";
 
 type RouteParams = { params: Promise<{ id: string }> };
 
@@ -16,10 +15,6 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     const body = await request.json();
     const result = await orderService.updateItemStatus(id, body, user.id);
     
-    // Trigger realtime socket updates
-    emitKitchenUpdate(result);
-    emitOrderUpdate(result.order);
-
     return successResponse(result, "Item status updated successfully");
   } catch (error) {
     return handleError(error);

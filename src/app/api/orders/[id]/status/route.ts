@@ -3,7 +3,6 @@ import { orderService } from "@/modules/orders/order.service";
 import { authenticate } from "@/middleware/auth";
 import { successResponse } from "@/utils/api-response";
 import { handleError } from "@/utils/error-handler";
-import { emitOrderUpdate, emitOrderServed } from "@/sockets/socket";
 
 type RouteParams = { params: Promise<{ id: string }> };
 
@@ -15,13 +14,6 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
     const body = await request.json();
     const result = await orderService.updateStatus(id, body, user.id);
     
-    // Trigger realtime socket updates
-    if (result.status === "SERVED") {
-      emitOrderServed(result);
-    } else {
-      emitOrderUpdate(result);
-    }
-
     return successResponse(result, "Order status updated successfully");
   } catch (error) {
     return handleError(error);
