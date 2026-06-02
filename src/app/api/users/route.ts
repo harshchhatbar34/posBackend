@@ -39,7 +39,7 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json();
     const result = await userService.create(body, user.role);
-    return successResponse(result, "User created successfully and onboarding email sent", 201);
+    return successResponse(result, "User created successfully and welcome email sent", 201);
   } catch (error) {
     return handleError(error);
   }

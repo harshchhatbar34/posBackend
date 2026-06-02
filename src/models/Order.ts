@@ -24,6 +24,7 @@ export interface IOrder extends Document {
   takenById: mongoose.Types.ObjectId;
   chefId?: mongoose.Types.ObjectId;
   servedById?: mongoose.Types.ObjectId;
+  receivedById?: mongoose.Types.ObjectId;
   totalAmount: number;
   paymentMethod?: PaymentMethod;
   paymentStatus: PaymentStatus;
@@ -40,6 +41,7 @@ const OrderSchema: Schema = new Schema(
     takenById: { type: Schema.Types.ObjectId, ref: 'User', required: true },
     chefId: { type: Schema.Types.ObjectId, ref: 'User' },
     servedById: { type: Schema.Types.ObjectId, ref: 'User' },
+    receivedById: { type: Schema.Types.ObjectId, ref: 'User' },
     totalAmount: { type: Number, default: 0 },
     paymentMethod: { type: String, enum: Object.values(PaymentMethod) },
     paymentStatus: { type: String, enum: Object.values(PaymentStatus), default: PaymentStatus.UNPAID },

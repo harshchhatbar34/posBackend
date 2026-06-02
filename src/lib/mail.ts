@@ -61,24 +61,19 @@ export async function sendOtpEmail(to: string, otp: string, name: string): Promi
   }
 }
 
-export async function sendWelcomeOnboardingEmail(
+export async function sendWelcomeEmail(
   to: string,
-  otp: string,
   name: string,
   role: string
 ): Promise<boolean> {
-  const subject = "Welcome to Jay Goga POS - Set Up Your Account";
+  const subject = "Welcome to Jay Goga POS - Account Created";
   const html = `
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 8px;">
       <h2 style="color: #6366F1; text-align: center;">Welcome to Jay Goga POS</h2>
       <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;" />
       <p>Hello <strong>${name}</strong>,</p>
       <p>An account has been created for you on the <strong>Jay Goga POS</strong> system as a <strong>${role}</strong>.</p>
-      <p>To secure your account and set up your initial login password, please open the mobile app on your device, choose <strong>Forgot Password</strong>, enter your email, and input the following 6-digit setup OTP code:</p>
-      <div style="background-color: #f3f4f6; padding: 15px; text-align: center; font-size: 24px; font-weight: bold; letter-spacing: 5px; color: #6366F1; border-radius: 6px; margin: 25px 0;">
-        ${otp}
-      </div>
-      <p style="color: #4b5563; font-size: 14px;"><strong>Note:</strong> This setup code is valid for <strong>24 hours</strong>. If you need any assistance, please contact your administrator.</p>
+      <p>You can now log in using your registered email address and the password configured for your account.</p>
       <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;" />
       <p style="color: #9ca3af; font-size: 12px; text-align: center;">Jay Goga POS System &copy; ${new Date().getFullYear()}</p>
     </div>
@@ -92,10 +87,10 @@ export async function sendWelcomeOnboardingEmail(
         subject,
         html,
       });
-      logger.info(`Onboarding welcome email sent successfully to ${to}`);
+      logger.info(`Welcome email sent successfully to ${to}`);
       return true;
     } catch (error: any) {
-      logger.error("Failed to send onboarding email via SendGrid", {
+      logger.error("Failed to send welcome email via SendGrid", {
         message: error.message,
         response: error.response?.body,
       });
@@ -107,7 +102,6 @@ export async function sendWelcomeOnboardingEmail(
     logger.info(`DEVELOPMENT WELCOME EMAIL SIMULATION FOR: ${to}`);
     logger.info(`Subject: ${subject}`);
     logger.info(`Role Assigned: ${role}`);
-    logger.info(`Setup OTP Code: ${otp}`);
     logger.info("=========================================");
     return true;
   }

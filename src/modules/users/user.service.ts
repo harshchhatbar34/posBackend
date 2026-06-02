@@ -13,7 +13,7 @@ import { paginationSchema, type PaginationParams } from "@/validators/common";
 import { NotFoundError, ConflictError, AppError, UnauthorizedError } from "@/utils/errors";
 import { paginationMeta } from "@/utils/api-response";
 import { logger } from "@/utils/logger";
-import { sendWelcomeOnboardingEmail } from "@/lib/mail";
+import { sendWelcomeEmail } from "@/lib/mail";
 
 export class UserService {
   async findAll(params: PaginationParams, requesterRole: string) {
@@ -105,24 +105,18 @@ export class UserService {
     const existing = await User.findOne({ email: validated.email });
     if (existing) throw new ConflictError("Email already exists");
 
-    const otp = Math.floor(100000 + Math.random() * 900000).toString();
-    const otpExpires = new Date(Date.now() + 24 * 60 * 60 * 1000);
-
-    const temporaryPassword = Math.random().toString(36).slice(-10);
-    const hashedPassword = await bcrypt.hash(temporaryPassword, 12);
+    const hashedPassword = await bcrypt.hash(validated.password, 12);
 
     const user = await User.create({
       name: validated.name,
       email: validated.email,
       role: validated.role,
       password: hashedPassword,
-      resetOtp: otp,
-      resetOtpExpires: otpExpires,
       isActive: true,
     });
 
-    await sendWelcomeOnboardingEmail(user.email, otp, user.name, user.role);
-    logger.info(`User created and onboarding email sent: ${user.email} with role ${user.role}`);
+    await sendWelcomeEmail(user.email, user.name, user.role);
+    logger.info(`User created and welcome email sent: ${user.email} with role ${user.role}`);
 
     return {
       id: user._id.toString(),

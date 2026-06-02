@@ -87,9 +87,10 @@ export class OrderService {
   async findById(id: string) {
     const order = await Order.findById(id)
       .populate({ path: 'tableId', populate: { path: 'sectionId', select: 'name' } })
-      .populate('takenById', 'name')
-      .populate('chefId', 'name')
-      .populate('servedById', 'name')
+      .populate('takenById', 'name email')
+      .populate('chefId', 'name email')
+      .populate('servedById', 'name email')
+      .populate('receivedById', 'name email')
       .lean();
       
     if (!order) throw new NotFoundError("Order");
@@ -101,6 +102,7 @@ export class OrderService {
     const takenByDoc: any = order.takenById;
     const chefDoc: any = order.chefId;
     const servedByDoc: any = order.servedById;
+    const receivedByDoc: any = order.receivedById;
 
     return {
       ...order,
@@ -109,6 +111,7 @@ export class OrderService {
       takenBy: takenByDoc ? { ...takenByDoc, id: takenByDoc._id.toString() } : null,
       chef: chefDoc ? { ...chefDoc, id: chefDoc._id.toString() } : null,
       servedBy: servedByDoc ? { ...servedByDoc, id: servedByDoc._id.toString() } : null,
+      receivedBy: receivedByDoc ? { ...receivedByDoc, id: receivedByDoc._id.toString() } : null,
       items: items.map(i => {
         const prodDoc: any = i.productId;
         return { ...i, id: i._id.toString(), product: prodDoc ? { ...prodDoc, id: prodDoc._id.toString() } : null };
@@ -314,6 +317,7 @@ export class OrderService {
         paymentMethod: validated.paymentMethod,
         paymentStatus: "PAID",
         paidAt: new Date(),
+        receivedById: userId,
       }, { session });
 
       const unpaidOrders = await Order.countDocuments({
