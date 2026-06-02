@@ -1,12 +1,12 @@
 import { ZodError } from "zod";
+import mongoose from "mongoose";
 import { AppError, ValidationError } from "./errors";
 import { errorResponse } from "./api-response";
 import { logger } from "./logger";
-import { Prisma } from "@prisma/client";
 
 // ============ Centralized Error Handler ============
 
-export function handleError(error: unknown) {
+export function handleError(error: any) {
   // Zod validation errors
   if (error instanceof ZodError) {
     const formatted = error.issues.map((e) => ({
@@ -28,19 +28,24 @@ export function handleError(error: unknown) {
     return errorResponse(error.message, error.statusCode);
   }
 
-  // Prisma known errors
-  if (error instanceof Prisma.PrismaClientKnownRequestError) {
-    switch (error.code) {
-      case "P2002":
-        return errorResponse("A record with this value already exists", 409);
-      case "P2025":
-        return errorResponse("Record not found", 404);
-      case "P2003":
-        return errorResponse("Related record not found", 400);
-      default:
-        logger.error("Prisma error", { code: error.code, message: error.message });
-        return errorResponse("Database error", 500);
-    }
+  // Mongoose Duplicate Key Error (e.g. unique constraint)
+  if (error && error.code === 11000) {
+    return errorResponse("A record with this value already exists", 409);
+  }
+
+  // Mongoose Validation Error
+  if (error instanceof mongoose.Error.ValidationError) {
+    const formatted = Object.values(error.errors).map((e) => ({
+      field: e.path,
+      message: e.message,
+    }));
+    logger.warn("Mongoose validation error", formatted);
+    return errorResponse("Database validation failed", 422, formatted);
+  }
+
+  // Mongoose CastError (e.g. invalid ObjectId)
+  if (error instanceof mongoose.Error.CastError) {
+    return errorResponse("Invalid ID format", 400);
   }
 
   // Unknown errors

@@ -1,4 +1,6 @@
-import prisma from "@/lib/prisma";
+import mongoose from "mongoose";
+import Order, { OrderStatus } from "@/models/Order";
+import OrderItem, { OrderItemStatus } from "@/models/OrderItem";
 import { logger } from "@/utils/logger";
 
 // ============ Kitchen Service ============
@@ -6,66 +8,166 @@ import { logger } from "@/utils/logger";
 export class KitchenService {
   // Get all active kitchen orders (sorted by creation time ASC)
   async getKitchenOrders(sectionId?: string) {
-    const where: Record<string, unknown> = {
-      status: { in: ["PENDING", "IN_PROGRESS", "COMPLETED"] },
+    const match: any = {
+      status: { $in: [OrderStatus.PENDING, OrderStatus.IN_PROGRESS, OrderStatus.COMPLETED] },
     };
 
-    if (sectionId) {
-      where.table = { sectionId };
-    }
-
-    const orders = await prisma.order.findMany({
-      where,
-      include: {
-        table: {
-          include: { section: { select: { id: true, name: true } } },
-        },
-        takenBy: { select: { id: true, name: true } },
-        chef: { select: { id: true, name: true } },
-        items: {
-          include: {
-            product: {
-              select: { id: true, name: true, price: true },
-            },
-          },
+    const pipeline: any[] = [
+      { $match: match },
+      {
+        $lookup: {
+          from: "tables",
+          localField: "tableId",
+          foreignField: "_id",
+          as: "table",
         },
       },
-      orderBy: { createdAt: "asc" },
-    });
+      { $unwind: "$table" },
+    ];
 
-    return orders;
+    if (sectionId) {
+      pipeline.push({
+        $match: { "table.sectionId": new mongoose.Types.ObjectId(sectionId) },
+      });
+    }
+
+    pipeline.push(
+      {
+        $lookup: {
+          from: "sections",
+          localField: "table.sectionId",
+          foreignField: "_id",
+          as: "table.section",
+        },
+      },
+      { $unwind: { path: "$table.section", preserveNullAndEmptyArrays: true } },
+      {
+        $lookup: {
+          from: "users",
+          localField: "takenById",
+          foreignField: "_id",
+          as: "takenBy",
+        },
+      },
+      { $unwind: { path: "$takenBy", preserveNullAndEmptyArrays: true } },
+      {
+        $lookup: {
+          from: "users",
+          localField: "chefId",
+          foreignField: "_id",
+          as: "chef",
+        },
+      },
+      { $unwind: { path: "$chef", preserveNullAndEmptyArrays: true } },
+      {
+        $lookup: {
+          from: "orderitems",
+          localField: "_id",
+          foreignField: "orderId",
+          as: "items",
+        },
+      },
+      {
+        $lookup: {
+          from: "products",
+          localField: "items.productId",
+          foreignField: "_id",
+          as: "productDocs",
+        },
+      },
+      { $sort: { createdAt: 1 } }
+    );
+
+    const orders = await Order.aggregate(pipeline);
+
+    // Map products to items manually
+    return orders.map((o) => {
+      const mappedItems = o.items.map((item: any) => {
+        const product = o.productDocs.find((p: any) => p._id.toString() === item.productId.toString());
+        return {
+          ...item,
+          id: item._id.toString(),
+          product: product ? { id: product._id.toString(), name: product.name, price: product.price } : null,
+        };
+      });
+
+      return {
+        ...o,
+        id: o._id.toString(),
+        table: {
+          ...o.table,
+          id: o.table._id.toString(),
+          section: o.table.section ? { id: o.table.section._id.toString(), name: o.table.section.name } : null,
+        },
+        takenBy: o.takenBy ? { id: o.takenBy._id.toString(), name: o.takenBy.name } : null,
+        chef: o.chef ? { id: o.chef._id.toString(), name: o.chef.name } : null,
+        items: mappedItems,
+      };
+    });
   }
 
-  // Get aggregated summary (SQL GROUP BY) for kitchen top section
+  // Get aggregated summary for kitchen top section
   async getKitchenSummary(sectionId?: string) {
-    // Use raw SQL for aggregation queries
-    const sectionFilter = sectionId
-      ? `AND t."sectionId" = '${sectionId}'`
-      : "";
+    const pipeline: any[] = [
+      {
+        $match: {
+          status: { $in: [OrderItemStatus.PENDING, OrderItemStatus.UNDER_COOK] },
+        },
+      },
+      {
+        $lookup: {
+          from: "orders",
+          localField: "orderId",
+          foreignField: "_id",
+          as: "order",
+        },
+      },
+      { $unwind: "$order" },
+      {
+        $match: {
+          "order.status": { $in: [OrderStatus.PENDING, OrderStatus.IN_PROGRESS] },
+        },
+      },
+      {
+        $lookup: {
+          from: "tables",
+          localField: "order.tableId",
+          foreignField: "_id",
+          as: "table",
+        },
+      },
+      { $unwind: "$table" },
+    ];
 
-    const summary = await prisma.$queryRawUnsafe<
-      Array<{
-        product_name: string;
-        product_price: number;
-        total_quantity: number;
-        total_amount: number;
-      }>
-    >(`
-      SELECT 
-        p.name as product_name,
-        p.price as product_price,
-        SUM(oi.quantity)::int as total_quantity,
-        SUM(oi.quantity * oi.price) as total_amount
-      FROM order_items oi
-      JOIN orders o ON oi."orderId" = o.id
-      JOIN products p ON oi."productId" = p.id
-      JOIN tables t ON o."tableId" = t.id
-      WHERE o.status IN ('PENDING', 'IN_PROGRESS')
-        AND oi.status IN ('PENDING', 'UNDER_COOK')
-        ${sectionFilter}
-      GROUP BY p.id, p.name, p.price
-      ORDER BY total_quantity DESC
-    `);
+    if (sectionId) {
+      pipeline.push({
+        $match: { "table.sectionId": new mongoose.Types.ObjectId(sectionId) },
+      });
+    }
+
+    pipeline.push(
+      {
+        $lookup: {
+          from: "products",
+          localField: "productId",
+          foreignField: "_id",
+          as: "product",
+        },
+      },
+      { $unwind: "$product" },
+      {
+        $group: {
+          _id: "$product._id",
+          product_name: { $first: "$product.name" },
+          product_price: { $first: "$product.price" },
+          total_quantity: { $sum: "$quantity" },
+          total_amount: { $sum: { $multiply: ["$quantity", "$price"] } },
+        },
+      },
+      { $sort: { total_quantity: -1 } }
+    );
+
+    const summary = await OrderItem.aggregate(pipeline);
 
     return summary.map((item) => ({
       name: item.product_name,
@@ -77,19 +179,18 @@ export class KitchenService {
 
   // Get kitchen stats
   async getKitchenStats() {
+    const startOfToday = new Date();
+    startOfToday.setHours(0, 0, 0, 0);
+
     const [pending, inProgress, completed, todayOrders] = await Promise.all([
-      prisma.order.count({ where: { status: "PENDING" } }),
-      prisma.order.count({ where: { status: "IN_PROGRESS" } }),
-      prisma.order.count({
-        where: {
-          status: "COMPLETED",
-          updatedAt: { gte: new Date(new Date().setHours(0, 0, 0, 0)) },
-        },
+      Order.countDocuments({ status: OrderStatus.PENDING }),
+      Order.countDocuments({ status: OrderStatus.IN_PROGRESS }),
+      Order.countDocuments({
+        status: OrderStatus.COMPLETED,
+        updatedAt: { $gte: startOfToday },
       }),
-      prisma.order.count({
-        where: {
-          createdAt: { gte: new Date(new Date().setHours(0, 0, 0, 0)) },
-        },
+      Order.countDocuments({
+        createdAt: { $gte: startOfToday },
       }),
     ]);
 

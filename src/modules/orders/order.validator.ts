@@ -1,5 +1,6 @@
 import { z } from "zod";
-import { OrderStatus, OrderItemStatus, PaymentMethod, PaymentStatus } from "@prisma/client";
+import { OrderStatus, PaymentMethod, PaymentStatus } from "@/models/Order";
+import { OrderItemStatus } from "@/models/OrderItem";
 
 export const orderItemInputSchema = z.object({
   productId: z.string().min(1, "Product is required"),

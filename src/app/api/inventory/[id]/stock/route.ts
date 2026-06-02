@@ -1,3 +1,4 @@
+import connectToDatabase from "@/lib/mongoose";
 import { NextRequest } from "next/server";
 import { inventoryService } from "@/modules/inventory/inventory.service";
 import { authenticate, authorize } from "@/middleware/auth";
@@ -9,6 +10,8 @@ type RouteParams = { params: Promise<{ id: string }> };
 // POST /api/inventory/[id]/stock
 export async function POST(request: NextRequest, { params }: RouteParams) {
   try {
+    await connectToDatabase();
+
     const user = await authenticate(request);
     authorize("SUPER_ADMIN", "ADMIN")(user.role);
     const { id } = await params;

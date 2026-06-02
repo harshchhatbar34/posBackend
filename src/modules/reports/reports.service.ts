@@ -1,87 +1,80 @@
-import prisma from "@/lib/prisma";
-
-// ============ Reports Service ============
+import mongoose from "mongoose";
+import Order, { PaymentStatus } from "@/models/Order";
+import OrderItem from "@/models/OrderItem";
+import InventoryItem from "@/models/InventoryItem";
+import InventoryUsageLog from "@/models/InventoryUsageLog";
 
 export class ReportsService {
-  // Sales report
   async getSalesReport(startDate?: string, endDate?: string) {
-    const dateFilter: Record<string, unknown> = {};
-    if (startDate) dateFilter.gte = new Date(startDate);
-    if (endDate) dateFilter.lte = new Date(endDate);
+    const dateFilter: any = {};
+    if (startDate) dateFilter.$gte = new Date(startDate);
+    if (endDate) dateFilter.$lte = new Date(endDate);
 
-    const where: Record<string, unknown> = {
-      paymentStatus: "PAID",
-      ...(Object.keys(dateFilter).length > 0 ? { paidAt: dateFilter } : {}),
-    };
+    const matchObj: any = { paymentStatus: PaymentStatus.PAID };
+    if (Object.keys(dateFilter).length > 0) {
+      matchObj.paidAt = dateFilter;
+    }
 
-    const [totalSales, orderCount, paymentBreakdown, topProducts, sectionWiseSales] =
+    const [totalSalesAgg, orderCount, paymentBreakdownAgg, topProducts, sectionWiseSales] =
       await Promise.all([
-        // Total sales
-        prisma.order.aggregate({
-          where,
-          _sum: { totalAmount: true },
-        }),
-        // Order count
-        prisma.order.count({ where }),
-        // Payment method breakdown
-        prisma.order.groupBy({
-          by: ["paymentMethod"],
-          where,
-          _sum: { totalAmount: true },
-          _count: true,
-        }),
-        // Top selling products
-        prisma.$queryRawUnsafe<
-          Array<{
-            product_name: string;
-            total_quantity: number;
-            total_revenue: number;
-          }>
-        >(`
-          SELECT 
-            p.name as product_name,
-            SUM(oi.quantity)::int as total_quantity,
-            SUM(oi.quantity * oi.price) as total_revenue
-          FROM order_items oi
-          JOIN orders o ON oi."orderId" = o.id
-          JOIN products p ON oi."productId" = p.id
-          WHERE o."paymentStatus" = 'PAID'
-            ${startDate ? `AND o."paidAt" >= '${startDate}'` : ""}
-            ${endDate ? `AND o."paidAt" <= '${endDate}'` : ""}
-          GROUP BY p.id, p.name
-          ORDER BY total_revenue DESC
-          LIMIT 20
-        `),
-        // Section-wise sales
-        prisma.$queryRawUnsafe<
-          Array<{
-            section_name: string;
-            order_count: number;
-            total_revenue: number;
-          }>
-        >(`
-          SELECT 
-            s.name as section_name,
-            COUNT(DISTINCT o.id)::int as order_count,
-            SUM(o."totalAmount") as total_revenue
-          FROM orders o
-          JOIN tables t ON o."tableId" = t.id
-          JOIN sections s ON t."sectionId" = s.id
-          WHERE o."paymentStatus" = 'PAID'
-            ${startDate ? `AND o."paidAt" >= '${startDate}'` : ""}
-            ${endDate ? `AND o."paidAt" <= '${endDate}'` : ""}
-          GROUP BY s.id, s.name
-          ORDER BY total_revenue DESC
-        `),
+        Order.aggregate([{ $match: matchObj }, { $group: { _id: null, totalAmount: { $sum: "$totalAmount" } } }]),
+        Order.countDocuments(matchObj),
+        Order.aggregate([
+          { $match: matchObj },
+          { $group: { _id: "$paymentMethod", totalAmount: { $sum: "$totalAmount" }, count: { $sum: 1 } } }
+        ]),
+        OrderItem.aggregate([
+          {
+            $lookup: { from: "orders", localField: "orderId", foreignField: "_id", as: "order" }
+          },
+          { $unwind: "$order" },
+          { $match: { "order.paymentStatus": PaymentStatus.PAID, ...(Object.keys(dateFilter).length > 0 ? { "order.paidAt": dateFilter } : {}) } },
+          {
+            $lookup: { from: "products", localField: "productId", foreignField: "_id", as: "product" }
+          },
+          { $unwind: "$product" },
+          {
+            $group: {
+              _id: "$product._id",
+              product_name: { $first: "$product.name" },
+              total_quantity: { $sum: "$quantity" },
+              total_revenue: { $sum: { $multiply: ["$quantity", "$price"] } }
+            }
+          },
+          { $sort: { total_revenue: -1 } },
+          { $limit: 20 }
+        ]),
+        Order.aggregate([
+          { $match: matchObj },
+          {
+            $lookup: { from: "tables", localField: "tableId", foreignField: "_id", as: "table" }
+          },
+          { $unwind: "$table" },
+          {
+            $lookup: { from: "sections", localField: "table.sectionId", foreignField: "_id", as: "section" }
+          },
+          { $unwind: "$section" },
+          {
+            $group: {
+              _id: "$section._id",
+              section_name: { $first: "$section.name" },
+              order_count: { $sum: 1 },
+              total_revenue: { $sum: "$totalAmount" }
+            }
+          },
+          { $sort: { total_revenue: -1 } }
+        ])
       ]);
 
+    const totalSales = totalSalesAgg[0]?.totalAmount || 0;
+
     return {
-      totalSales: totalSales._sum.totalAmount || 0,
+      totalSales,
       orderCount,
-      paymentBreakdown: paymentBreakdown.map((p) => ({
-        method: p.paymentMethod,
-        total: p._sum.totalAmount || 0,
-        count: p._count,
+      paymentBreakdown: paymentBreakdownAgg.map((p) => ({
+        method: p._id,
+        total: p.totalAmount || 0,
+        count: p.count,
       })),
       topProducts: topProducts.map((p) => ({
         name: p.product_name,
@@ -96,83 +89,59 @@ export class ReportsService {
     };
   }
 
-  // Order report
   async getOrderReport(startDate?: string, endDate?: string) {
-    const dateFilter: Record<string, unknown> = {};
-    if (startDate) dateFilter.gte = new Date(startDate);
-    if (endDate) dateFilter.lte = new Date(endDate);
+    const dateFilter: any = {};
+    if (startDate) dateFilter.$gte = new Date(startDate);
+    if (endDate) dateFilter.$lte = new Date(endDate);
 
-    const where: Record<string, unknown> = {
-      ...(Object.keys(dateFilter).length > 0 ? { createdAt: dateFilter } : {}),
-    };
+    const matchObj: any = {};
+    if (Object.keys(dateFilter).length > 0) {
+      matchObj.createdAt = dateFilter;
+    }
 
-    const [statusBreakdown, dailyOrders] = await Promise.all([
-      prisma.order.groupBy({
-        by: ["status"],
-        where,
-        _count: true,
-        _sum: { totalAmount: true },
-      }),
-      prisma.$queryRawUnsafe<
-        Array<{
-          date: string;
-          order_count: number;
-          total_amount: number;
-        }>
-      >(`
-        SELECT 
-          DATE(o."createdAt") as date,
-          COUNT(*)::int as order_count,
-          COALESCE(SUM(o."totalAmount"), 0) as total_amount
-        FROM orders o
-        WHERE 1=1
-          ${startDate ? `AND o."createdAt" >= '${startDate}'` : ""}
-          ${endDate ? `AND o."createdAt" <= '${endDate}'` : ""}
-        GROUP BY DATE(o."createdAt")
-        ORDER BY date DESC
-        LIMIT 30
-      `),
+    const [statusBreakdownAgg, dailyOrdersAgg] = await Promise.all([
+      Order.aggregate([
+        { $match: matchObj },
+        { $group: { _id: "$status", totalAmount: { $sum: "$totalAmount" }, count: { $sum: 1 } } }
+      ]),
+      Order.aggregate([
+        { $match: matchObj },
+        {
+          $group: {
+            _id: { $dateToString: { format: "%Y-%m-%d", date: "$createdAt" } },
+            order_count: { $sum: 1 },
+            total_amount: { $sum: "$totalAmount" }
+          }
+        },
+        { $sort: { _id: -1 } },
+        { $limit: 30 }
+      ])
     ]);
 
     return {
-      statusBreakdown: statusBreakdown.map((s) => ({
-        status: s.status,
-        count: s._count,
-        totalAmount: s._sum.totalAmount || 0,
+      statusBreakdown: statusBreakdownAgg.map((s) => ({
+        status: s._id,
+        count: s.count,
+        totalAmount: s.totalAmount || 0,
       })),
-      dailyOrders: dailyOrders.map((d) => ({
-        date: d.date,
+      dailyOrders: dailyOrdersAgg.map((d) => ({
+        date: d._id,
         orderCount: d.order_count,
         totalAmount: d.total_amount,
       })),
     };
   }
 
-  // Inventory report
   async getInventoryReport() {
-    const [items, totalValue, lowStockItems, recentUsage] = await Promise.all([
-      prisma.inventoryItem.findMany({
-        where: { isActive: true },
-        orderBy: { name: "asc" },
-      }),
-      prisma.inventoryItem.findMany({
-        where: { isActive: true },
-        select: { quantity: true, pricePerUnit: true },
-      }),
-      prisma.inventoryItem.findMany({
-        where: {
-          isActive: true,
-          quantity: { lte: prisma.inventoryItem.fields.minStock as unknown as number },
-        },
-      }),
-      prisma.inventoryUsageLog.findMany({
-        include: {
-          inventoryItem: { select: { name: true, unit: true } },
-          takenBy: { select: { name: true } },
-        },
-        orderBy: { createdAt: "desc" },
-        take: 50,
-      }),
+    const [items, totalValue, recentUsage] = await Promise.all([
+      InventoryItem.find({ isActive: true }).sort({ name: 1 }).lean(),
+      InventoryItem.find({ isActive: true }).select('quantity pricePerUnit').lean(),
+      InventoryUsageLog.find()
+        .populate('inventoryItemId', 'name unit')
+        .populate('takenById', 'name')
+        .sort({ createdAt: -1 })
+        .limit(50)
+        .lean()
     ]);
 
     const totalInventoryValue = totalValue.reduce(
@@ -180,16 +149,26 @@ export class ReportsService {
       0
     );
 
+    const enrichedItems = items.map((item) => ({
+      ...item,
+      totalPrice: item.quantity * item.pricePerUnit,
+      isLowStock: item.quantity <= item.minStock,
+    }));
+
     return {
       totalItems: items.length,
       totalInventoryValue,
-      items: items.map((item) => ({
-        ...item,
-        totalPrice: item.quantity * item.pricePerUnit,
-        isLowStock: item.quantity <= item.minStock,
-      })),
-      lowStockCount: items.filter((i) => i.quantity <= i.minStock).length,
-      recentUsage,
+      items: enrichedItems,
+      lowStockCount: enrichedItems.filter((i) => i.isLowStock).length,
+      recentUsage: recentUsage.map(r => {
+        const itemDoc: any = r.inventoryItemId;
+        const userDoc: any = r.takenById;
+        return {
+          ...r,
+          inventoryItem: itemDoc ? { name: itemDoc.name, unit: itemDoc.unit } : null,
+          takenBy: userDoc ? { name: userDoc.name } : null
+        };
+      }),
     };
   }
 }

@@ -1,3 +1,4 @@
+import connectToDatabase from "@/lib/mongoose";
 import { NextRequest } from "next/server";
 import { tableService } from "@/modules/tables/table.service";
 import { authenticate, authorize } from "@/middleware/auth";
@@ -7,6 +8,8 @@ import { handleError } from "@/utils/error-handler";
 // GET /api/tables
 export async function GET(request: NextRequest) {
   try {
+    await connectToDatabase();
+
     await authenticate(request);
     const { searchParams } = new URL(request.url);
     const params = {
@@ -27,6 +30,8 @@ export async function GET(request: NextRequest) {
 // POST /api/tables
 export async function POST(request: NextRequest) {
   try {
+    await connectToDatabase();
+
     const user = await authenticate(request);
     authorize("SUPER_ADMIN", "ADMIN")(user.role);
     const body = await request.json();

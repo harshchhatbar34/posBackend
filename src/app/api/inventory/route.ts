@@ -1,3 +1,4 @@
+import connectToDatabase from "@/lib/mongoose";
 import { NextRequest } from "next/server";
 import { inventoryService } from "@/modules/inventory/inventory.service";
 import { authenticate, authorize } from "@/middleware/auth";
@@ -7,6 +8,8 @@ import { handleError } from "@/utils/error-handler";
 // GET /api/inventory
 export async function GET(request: NextRequest) {
   try {
+    await connectToDatabase();
+
     const user = await authenticate(request);
     authorize("SUPER_ADMIN", "ADMIN")(user.role);
     const { searchParams } = new URL(request.url);
@@ -28,6 +31,8 @@ export async function GET(request: NextRequest) {
 // POST /api/inventory
 export async function POST(request: NextRequest) {
   try {
+    await connectToDatabase();
+
     const user = await authenticate(request);
     authorize("SUPER_ADMIN", "ADMIN")(user.role);
     const body = await request.json();

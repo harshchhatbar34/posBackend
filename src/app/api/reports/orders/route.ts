@@ -1,3 +1,4 @@
+import connectToDatabase from "@/lib/mongoose";
 import { NextRequest } from "next/server";
 import { reportsService } from "@/modules/reports/reports.service";
 import { authenticate, authorize } from "@/middleware/auth";
@@ -7,6 +8,8 @@ import { handleError } from "@/utils/error-handler";
 // GET /api/reports/orders
 export async function GET(request: NextRequest) {
   try {
+    await connectToDatabase();
+
     const user = await authenticate(request);
     authorize("SUPER_ADMIN", "ADMIN")(user.role);
     const { searchParams } = new URL(request.url);

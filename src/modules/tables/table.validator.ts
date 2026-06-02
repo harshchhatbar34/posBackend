@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { TableStatus } from "@prisma/client";
+import { TableStatus } from "@/models/Table";
 
 export const createTableSchema = z.object({
   tableNumber: z.number().int().positive("Table number must be positive"),

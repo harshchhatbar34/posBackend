@@ -1,4 +1,5 @@
-import prisma from "@/lib/prisma";
+import mongoose from "mongoose";
+import Product from "@/models/Product";
 import {
   createProductSchema,
   updateProductSchema,
@@ -21,75 +22,70 @@ export class ProductService {
     const { page, pageSize, search, sortBy, sortOrder } = paginationSchema.parse(params);
     const skip = (page - 1) * pageSize;
 
-    const where: Record<string, unknown> = {};
-    if (params.sectionId) where.sectionId = params.sectionId;
-    if (params.categoryId) where.categoryId = params.categoryId;
+    const where: any = {};
+    if (params.sectionId) where.sectionId = new mongoose.Types.ObjectId(params.sectionId);
+    if (params.categoryId) where.categoryId = new mongoose.Types.ObjectId(params.categoryId);
     if (params.isAvailable !== undefined)
       where.isAvailable = params.isAvailable === "true";
     if (search) {
-      where.name = { contains: search, mode: "insensitive" };
+      where.name = { $regex: search, $options: "i" };
     }
 
+    const sortOpt: any = { [sortBy || "name"]: sortOrder === "desc" ? -1 : 1 };
+
     const [products, total] = await Promise.all([
-      prisma.product.findMany({
-        where,
-        include: {
-          category: { select: { id: true, name: true } },
-          section: { select: { id: true, name: true } },
-        },
-        skip,
-        take: pageSize,
-        orderBy: { [sortBy || "name"]: sortOrder === "desc" ? "desc" : "asc" },
-      }),
-      prisma.product.count({ where }),
+      Product.find(where)
+        .populate("category", "name")
+        .populate("section", "name")
+        .sort(sortOpt)
+        .skip(skip)
+        .limit(pageSize)
+        .lean(),
+      Product.countDocuments(where),
     ]);
 
-    return { products, meta: paginationMeta(page, pageSize, total) };
+    const enrichedProducts = products.map(p => ({
+      ...p,
+      id: p._id.toString(),
+      category: p.categoryId ? { ...(p.categoryId as any), id: (p.categoryId as any)._id.toString() } : null,
+      section: p.sectionId ? { ...(p.sectionId as any), id: (p.sectionId as any)._id.toString() } : null,
+    }));
+
+    return { products: enrichedProducts, meta: paginationMeta(page, pageSize, total) };
   }
 
   async findById(id: string) {
-    const product = await prisma.product.findUnique({
-      where: { id },
-      include: {
-        category: { select: { id: true, name: true } },
-        section: { select: { id: true, name: true } },
-      },
-    });
+    const product = await Product.findById(id)
+      .populate("category", "name")
+      .populate("section", "name")
+      .lean();
     if (!product) throw new NotFoundError("Product");
-    return product;
+    return {
+      ...product,
+      id: product._id.toString(),
+      category: product.categoryId ? { ...(product.categoryId as any), id: (product.categoryId as any)._id.toString() } : null,
+      section: product.sectionId ? { ...(product.sectionId as any), id: (product.sectionId as any)._id.toString() } : null,
+    };
   }
 
   async create(input: CreateProductInput) {
     const validated = createProductSchema.parse(input);
-    const product = await prisma.product.create({
-      data: validated,
-      include: {
-        category: { select: { id: true, name: true } },
-        section: { select: { id: true, name: true } },
-      },
-    });
+    const product = await Product.create(validated);
     logger.info(`Product created: ${product.name}`);
-    return product;
+    return this.findById(product._id.toString());
   }
 
   async update(id: string, input: UpdateProductInput) {
     const validated = updateProductSchema.parse(input);
-    await this.findById(id);
-    const product = await prisma.product.update({
-      where: { id },
-      data: validated,
-      include: {
-        category: { select: { id: true, name: true } },
-        section: { select: { id: true, name: true } },
-      },
-    });
+    const product = await Product.findByIdAndUpdate(id, validated, { new: true });
+    if (!product) throw new NotFoundError("Product");
     logger.info(`Product updated: ${product.name}`);
-    return product;
+    return this.findById(id);
   }
 
   async delete(id: string) {
-    await this.findById(id);
-    await prisma.product.update({ where: { id }, data: { isAvailable: false } });
+    const product = await Product.findByIdAndUpdate(id, { isAvailable: false });
+    if (!product) throw new NotFoundError("Product");
     logger.info(`Product deactivated: ${id}`);
     return { message: "Product deactivated successfully" };
   }

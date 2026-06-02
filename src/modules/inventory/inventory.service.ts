@@ -1,4 +1,7 @@
-import prisma from "@/lib/prisma";
+import mongoose from "mongoose";
+import InventoryItem from "@/models/InventoryItem";
+import InventoryStockLog from "@/models/InventoryStockLog";
+import InventoryUsageLog from "@/models/InventoryUsageLog";
 import {
   createInventoryItemSchema,
   updateInventoryItemSchema,
@@ -19,23 +22,21 @@ export class InventoryService {
     const { page, pageSize, search, sortBy, sortOrder } = paginationSchema.parse(params);
     const skip = (page - 1) * pageSize;
 
-    const where: Record<string, unknown> = {};
-    if (params.location) where.location = { contains: params.location, mode: "insensitive" };
-    if (search) where.name = { contains: search, mode: "insensitive" };
+    const where: any = { isActive: true };
+    if (params.location) where.location = { $regex: params.location, $options: "i" };
+    if (search) where.name = { $regex: search, $options: "i" };
+
+    const sortOpt: any = { [sortBy || "name"]: sortOrder === "desc" ? -1 : 1 };
 
     const [items, total] = await Promise.all([
-      prisma.inventoryItem.findMany({
-        where,
-        skip,
-        take: pageSize,
-        orderBy: { [sortBy || "name"]: sortOrder === "desc" ? "desc" : "asc" },
-      }),
-      prisma.inventoryItem.count({ where }),
+      InventoryItem.find(where).sort(sortOpt).skip(skip).limit(pageSize).lean(),
+      InventoryItem.countDocuments(where),
     ]);
 
     // Add computed totalPrice
     const enrichedItems = items.map((item) => ({
       ...item,
+      id: item._id.toString(),
       totalPrice: item.quantity * item.pricePerUnit,
       isLowStock: item.quantity <= item.minStock,
     }));
@@ -44,24 +45,26 @@ export class InventoryService {
   }
 
   async findById(id: string) {
-    const item = await prisma.inventoryItem.findUnique({
-      where: { id },
-      include: {
-        stockLogs: {
-          include: { addedBy: { select: { id: true, name: true } } },
-          orderBy: { createdAt: "desc" },
-          take: 20,
-        },
-        usageLogs: {
-          include: { takenBy: { select: { id: true, name: true } } },
-          orderBy: { createdAt: "desc" },
-          take: 20,
-        },
-      },
-    });
+    const item = await InventoryItem.findById(id).lean();
     if (!item) throw new NotFoundError("Inventory item");
+
+    const stockLogs = await InventoryStockLog.find({ inventoryItemId: id })
+      .sort({ createdAt: -1 })
+      .limit(20)
+      .populate('addedBy', 'name id')
+      .lean();
+
+    const usageLogs = await InventoryUsageLog.find({ inventoryItemId: id })
+      .sort({ createdAt: -1 })
+      .limit(20)
+      .populate('takenBy', 'name id')
+      .lean();
+
     return {
       ...item,
+      id: item._id.toString(),
+      stockLogs: stockLogs.map(l => ({ ...l, id: l._id.toString() })),
+      usageLogs: usageLogs.map(l => ({ ...l, id: l._id.toString() })),
       totalPrice: item.quantity * item.pricePerUnit,
       isLowStock: item.quantity <= item.minStock,
     };
@@ -69,15 +72,15 @@ export class InventoryService {
 
   async create(input: CreateInventoryItemInput) {
     const validated = createInventoryItemSchema.parse(input);
-    const item = await prisma.inventoryItem.create({ data: validated });
+    const item = await InventoryItem.create(validated);
     logger.info(`Inventory item created: ${item.name}`);
     return item;
   }
 
   async update(id: string, input: UpdateInventoryItemInput) {
     const validated = updateInventoryItemSchema.parse(input);
-    await this.findById(id);
-    const item = await prisma.inventoryItem.update({ where: { id }, data: validated });
+    const item = await InventoryItem.findByIdAndUpdate(id, validated, { new: true });
+    if (!item) throw new NotFoundError("Inventory item");
     logger.info(`Inventory item updated: ${item.name}`);
     return item;
   }
@@ -85,73 +88,88 @@ export class InventoryService {
   async addStock(id: string, input: AddStockInput, userId: string) {
     const validated = addStockSchema.parse(input);
 
-    return await prisma.$transaction(async (tx) => {
-      const item = await tx.inventoryItem.findUnique({ where: { id } });
+    const session = await mongoose.startSession();
+    session.startTransaction();
+
+    try {
+      const item = await InventoryItem.findById(id).session(session);
       if (!item) throw new NotFoundError("Inventory item");
 
-      const updatedItem = await tx.inventoryItem.update({
-        where: { id },
-        data: { quantity: { increment: validated.quantityAdded } },
-      });
+      item.quantity += validated.quantityAdded;
+      await item.save({ session });
 
-      await tx.inventoryStockLog.create({
-        data: {
+      await InventoryStockLog.create(
+        [{
           inventoryItemId: id,
           quantityAdded: validated.quantityAdded,
           note: validated.note,
           addedById: userId,
-        },
-      });
+        }],
+        { session }
+      );
+
+      await session.commitTransaction();
+      session.endSession();
 
       logger.info(`Stock added: ${validated.quantityAdded} ${item.unit} of ${item.name}`);
       return {
-        ...updatedItem,
-        totalPrice: updatedItem.quantity * updatedItem.pricePerUnit,
+        ...item.toObject(),
+        id: item._id.toString(),
+        totalPrice: item.quantity * item.pricePerUnit,
       };
-    });
+    } catch (error) {
+      await session.abortTransaction();
+      session.endSession();
+      throw error;
+    }
   }
 
   async recordUsage(id: string, input: RecordUsageInput, userId: string) {
     const validated = recordUsageSchema.parse(input);
 
-    return await prisma.$transaction(async (tx) => {
-      const item = await tx.inventoryItem.findUnique({ where: { id } });
+    const session = await mongoose.startSession();
+    session.startTransaction();
+
+    try {
+      const item = await InventoryItem.findById(id).session(session);
       if (!item) throw new NotFoundError("Inventory item");
 
       if (item.quantity < validated.quantityUsed) {
-        throw new AppError(
-          `Insufficient stock. Available: ${item.quantity} ${item.unit}`
-        );
+        throw new AppError(`Insufficient stock. Available: ${item.quantity} ${item.unit}`);
       }
 
-      const updatedItem = await tx.inventoryItem.update({
-        where: { id },
-        data: { quantity: { decrement: validated.quantityUsed } },
-      });
+      item.quantity -= validated.quantityUsed;
+      await item.save({ session });
 
-      await tx.inventoryUsageLog.create({
-        data: {
+      await InventoryUsageLog.create(
+        [{
           inventoryItemId: id,
           quantityUsed: validated.quantityUsed,
           note: validated.note,
           takenById: userId,
-        },
-      });
+        }],
+        { session }
+      );
+
+      await session.commitTransaction();
+      session.endSession();
 
       logger.info(`Stock used: ${validated.quantityUsed} ${item.unit} of ${item.name}`);
       return {
-        ...updatedItem,
-        totalPrice: updatedItem.quantity * updatedItem.pricePerUnit,
+        ...item.toObject(),
+        id: item._id.toString(),
+        totalPrice: item.quantity * item.pricePerUnit,
       };
-    });
+    } catch (error) {
+      await session.abortTransaction();
+      session.endSession();
+      throw error;
+    }
   }
 
   // Calculate total inventory value
   async getTotalValue() {
-    const items = await prisma.inventoryItem.findMany({
-      where: { isActive: true },
-      select: { quantity: true, pricePerUnit: true },
-    });
+    const items = await InventoryItem.find({ isActive: true }).select('quantity pricePerUnit').lean();
 
     const totalValue = items.reduce(
       (sum, item) => sum + item.quantity * item.pricePerUnit,

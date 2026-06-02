@@ -1,4 +1,7 @@
-import prisma from "@/lib/prisma";
+import mongoose from "mongoose";
+import Section from "@/models/Section";
+import Table from "@/models/Table";
+import Product from "@/models/Product";
 import {
   createSectionSchema,
   updateSectionSchema,
@@ -15,21 +18,47 @@ export class SectionService {
     const { page, pageSize, search, sortBy, sortOrder } = paginationSchema.parse(params);
     const skip = (page - 1) * pageSize;
 
-    const where = {
-      ...(search ? { name: { contains: search, mode: "insensitive" as const } } : {}),
-    };
+    const where: any = {};
+    if (search) {
+      where.name = { $regex: search, $options: "i" };
+    }
+
+    const sortOpt: any = { [sortBy || "createdAt"]: sortOrder === "desc" ? -1 : 1 };
 
     const [sections, total] = await Promise.all([
-      prisma.section.findMany({
-        where,
-        include: {
-          _count: { select: { tables: true, products: true } },
+      Section.aggregate([
+        { $match: where },
+        { $sort: sortOpt },
+        { $skip: skip },
+        { $limit: pageSize },
+        {
+          $lookup: {
+            from: "tables",
+            localField: "_id",
+            foreignField: "sectionId",
+            as: "tables",
+          },
         },
-        skip,
-        take: pageSize,
-        orderBy: { [sortBy || "createdAt"]: sortOrder },
-      }),
-      prisma.section.count({ where }),
+        {
+          $lookup: {
+            from: "products",
+            localField: "_id",
+            foreignField: "sectionId",
+            as: "products",
+          },
+        },
+        {
+          $addFields: {
+            _count: {
+              tables: { $size: "$tables" },
+              products: { $size: "$products" },
+            },
+            id: { $toString: "$_id" },
+          },
+        },
+        { $project: { tables: 0, products: 0 } },
+      ]),
+      Section.countDocuments(where),
     ]);
 
     return {
@@ -39,35 +68,38 @@ export class SectionService {
   }
 
   async findById(id: string) {
-    const section = await prisma.section.findUnique({
-      where: { id },
-      include: {
-        tables: true,
-        _count: { select: { products: true } },
-      },
-    });
+    const section = await Section.findById(id).lean();
     if (!section) throw new NotFoundError("Section");
-    return section;
+
+    const tables = await Table.find({ sectionId: id }).lean();
+    const productCount = await Product.countDocuments({ sectionId: id });
+
+    return {
+      ...section,
+      id: section._id.toString(),
+      tables: tables.map(t => ({ ...t, id: t._id.toString() })),
+      _count: { products: productCount }
+    };
   }
 
   async create(input: CreateSectionInput) {
     const validated = createSectionSchema.parse(input);
-    const section = await prisma.section.create({ data: validated });
+    const section = await Section.create(validated);
     logger.info(`Section created: ${section.name}`);
-    return section;
+    return this.findById(section._id.toString());
   }
 
   async update(id: string, input: UpdateSectionInput) {
     const validated = updateSectionSchema.parse(input);
-    await this.findById(id);
-    const section = await prisma.section.update({ where: { id }, data: validated });
+    const section = await Section.findByIdAndUpdate(id, validated, { new: true });
+    if (!section) throw new NotFoundError("Section");
     logger.info(`Section updated: ${section.name}`);
-    return section;
+    return this.findById(id);
   }
 
   async delete(id: string) {
-    await this.findById(id);
-    await prisma.section.update({ where: { id }, data: { isActive: false } });
+    const section = await Section.findByIdAndUpdate(id, { isActive: false });
+    if (!section) throw new NotFoundError("Section");
     logger.info(`Section deactivated: ${id}`);
     return { message: "Section deactivated successfully" };
   }

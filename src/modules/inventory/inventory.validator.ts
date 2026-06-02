@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { InventoryUnit } from "@prisma/client";
+import { InventoryUnit } from "@/models/InventoryItem";
 
 export const createInventoryItemSchema = z.object({
   name: z.string().min(2, "Name must be at least 2 characters"),

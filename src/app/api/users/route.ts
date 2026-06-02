@@ -1,3 +1,4 @@
+import connectToDatabase from "@/lib/mongoose";
 import { NextRequest } from "next/server";
 import { userService } from "@/modules/users/user.service";
 import { authenticate, authorize } from "@/middleware/auth";
@@ -7,6 +8,8 @@ import { handleError } from "@/utils/error-handler";
 // GET /api/users
 export async function GET(request: NextRequest) {
   try {
+    await connectToDatabase();
+
     const user = await authenticate(request);
     authorize("SUPER_ADMIN", "ADMIN")(user.role);
 
@@ -29,6 +32,8 @@ export async function GET(request: NextRequest) {
 // POST /api/users
 export async function POST(request: NextRequest) {
   try {
+    await connectToDatabase();
+
     const user = await authenticate(request);
     authorize("SUPER_ADMIN", "ADMIN")(user.role);
 

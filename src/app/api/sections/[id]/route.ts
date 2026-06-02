@@ -1,3 +1,4 @@
+import connectToDatabase from "@/lib/mongoose";
 import { NextRequest } from "next/server";
 import { sectionService } from "@/modules/sections/section.service";
 import { authenticate, authorize } from "@/middleware/auth";
@@ -9,6 +10,8 @@ type RouteParams = { params: Promise<{ id: string }> };
 // GET /api/sections/[id]
 export async function GET(request: NextRequest, { params }: RouteParams) {
   try {
+    await connectToDatabase();
+
     await authenticate(request);
     const { id } = await params;
     const result = await sectionService.findById(id);
@@ -21,6 +24,8 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 // PATCH /api/sections/[id]
 export async function PATCH(request: NextRequest, { params }: RouteParams) {
   try {
+    await connectToDatabase();
+
     const user = await authenticate(request);
     authorize("SUPER_ADMIN", "ADMIN")(user.role);
     const { id } = await params;
@@ -35,6 +40,8 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
 // DELETE /api/sections/[id]
 export async function DELETE(request: NextRequest, { params }: RouteParams) {
   try {
+    await connectToDatabase();
+
     const user = await authenticate(request);
     authorize("SUPER_ADMIN", "ADMIN")(user.role);
     const { id } = await params;

@@ -1,3 +1,4 @@
+import connectToDatabase from "@/lib/mongoose";
 import { NextRequest } from "next/server";
 import { orderService } from "@/modules/orders/order.service";
 import { authenticate } from "@/middleware/auth";
@@ -7,6 +8,8 @@ import { handleError } from "@/utils/error-handler";
 // GET /api/orders
 export async function GET(request: NextRequest) {
   try {
+    await connectToDatabase();
+
     await authenticate(request);
     const { searchParams } = new URL(request.url);
     const params = {
@@ -30,6 +33,8 @@ export async function GET(request: NextRequest) {
 // POST /api/orders
 export async function POST(request: NextRequest) {
   try {
+    await connectToDatabase();
+
     const user = await authenticate(request);
     const body = await request.json();
     const result = await orderService.create(body, user.id);

@@ -1,4 +1,9 @@
-import prisma from "@/lib/prisma";
+import mongoose from "mongoose";
+import Order, { OrderStatus, PaymentStatus } from "@/models/Order";
+import OrderItem, { OrderItemStatus } from "@/models/OrderItem";
+import OrderLog from "@/models/OrderLog";
+import Product from "@/models/Product";
+import Table, { TableStatus } from "@/models/Table";
 import {
   createOrderSchema,
   updateOrderStatusSchema,
@@ -10,110 +15,129 @@ import {
   type RecordPaymentInput,
 } from "./order.validator";
 import { paginationSchema, type PaginationParams } from "@/validators/common";
-import { NotFoundError, AppError, ForbiddenError } from "@/utils/errors";
+import { NotFoundError, AppError } from "@/utils/errors";
 import { paginationMeta } from "@/utils/api-response";
 import { logger } from "@/utils/logger";
 
-// ============ Order Service ============
-
 export class OrderService {
-  // ---- List Orders ----
-  async findAll(
-    params: PaginationParams & {
-      status?: string;
-      tableId?: string;
-      paymentStatus?: string;
-      startDate?: string;
-      endDate?: string;
-    }
-  ) {
+  async findAll(params: PaginationParams & { status?: string; tableId?: string; paymentStatus?: string; startDate?: string; endDate?: string; }) {
     const { page, pageSize, sortBy, sortOrder } = paginationSchema.parse(params);
     const skip = (page - 1) * pageSize;
 
-    const where: Record<string, unknown> = {};
+    const where: any = {};
     if (params.status) where.status = params.status;
-    if (params.tableId) where.tableId = params.tableId;
+    if (params.tableId) where.tableId = new mongoose.Types.ObjectId(params.tableId);
     if (params.paymentStatus) where.paymentStatus = params.paymentStatus;
     if (params.startDate || params.endDate) {
       where.createdAt = {};
-      if (params.startDate)
-        (where.createdAt as Record<string, unknown>).gte = new Date(params.startDate);
-      if (params.endDate)
-        (where.createdAt as Record<string, unknown>).lte = new Date(params.endDate);
+      if (params.startDate) where.createdAt.$gte = new Date(params.startDate);
+      if (params.endDate) where.createdAt.$lte = new Date(params.endDate);
     }
 
+    const sortOpt: any = { [sortBy || "createdAt"]: sortOrder === "desc" ? -1 : 1 };
+
     const [orders, total] = await Promise.all([
-      prisma.order.findMany({
-        where,
-        include: {
-          table: {
-            include: { section: { select: { id: true, name: true } } },
-          },
-          takenBy: { select: { id: true, name: true } },
-          chef: { select: { id: true, name: true } },
-          servedBy: { select: { id: true, name: true } },
-          items: {
-            include: { product: { select: { id: true, name: true, price: true } } },
-          },
-          _count: { select: { items: true } },
-        },
-        skip,
-        take: pageSize,
-        orderBy: { [sortBy || "createdAt"]: sortOrder },
-      }),
-      prisma.order.count({ where }),
+      Order.find(where)
+        .populate({ path: 'tableId', populate: { path: 'sectionId', select: 'name' } })
+        .populate('takenById', 'name')
+        .populate('chefId', 'name')
+        .populate('servedById', 'name')
+        .sort(sortOpt)
+        .skip(skip)
+        .limit(pageSize)
+        .lean(),
+      Order.countDocuments(where),
     ]);
 
-    return { orders, meta: paginationMeta(page, pageSize, total) };
-  }
+    const orderIds = orders.map(o => o._id);
+    const allItems = await OrderItem.find({ orderId: { $in: orderIds } }).populate('productId', 'name price').lean();
+    
+    const enrichedOrders = orders.map(order => {
+      const items = allItems.filter(i => i.orderId.toString() === order._id.toString());
+      
+      const tableDoc: any = order.tableId;
+      const takenByDoc: any = order.takenById;
+      const chefDoc: any = order.chefId;
+      const servedByDoc: any = order.servedById;
 
-  // ---- Get Order By ID ----
-  async findById(id: string) {
-    const order = await prisma.order.findUnique({
-      where: { id },
-      include: {
-        table: {
-          include: { section: { select: { id: true, name: true } } },
-        },
-        takenBy: { select: { id: true, name: true } },
-        chef: { select: { id: true, name: true } },
-        servedBy: { select: { id: true, name: true } },
-        items: {
-          include: { product: true },
-        },
-        logs: {
-          include: { user: { select: { id: true, name: true } } },
-          orderBy: { createdAt: "asc" },
-        },
-      },
+      return {
+        ...order,
+        id: order._id.toString(),
+        table: tableDoc ? { ...tableDoc, id: tableDoc._id.toString(), section: tableDoc.sectionId ? { id: tableDoc.sectionId._id.toString(), name: tableDoc.sectionId.name } : null } : null,
+        takenBy: takenByDoc ? { ...takenByDoc, id: takenByDoc._id.toString() } : null,
+        chef: chefDoc ? { ...chefDoc, id: chefDoc._id.toString() } : null,
+        servedBy: servedByDoc ? { ...servedByDoc, id: servedByDoc._id.toString() } : null,
+        items: items.map(i => {
+          const prodDoc: any = i.productId;
+          return {
+            ...i,
+            id: i._id.toString(),
+            product: prodDoc ? { ...prodDoc, id: prodDoc._id.toString() } : null
+          };
+        }),
+        _count: { items: items.length }
+      };
     });
-    if (!order) throw new NotFoundError("Order");
-    return order;
+
+    return { orders: enrichedOrders, meta: paginationMeta(page, pageSize, total) };
   }
 
-  // ---- Create Order (Helper flow) ----
+  async findById(id: string) {
+    const order = await Order.findById(id)
+      .populate({ path: 'tableId', populate: { path: 'sectionId', select: 'name' } })
+      .populate('takenById', 'name')
+      .populate('chefId', 'name')
+      .populate('servedById', 'name')
+      .lean();
+      
+    if (!order) throw new NotFoundError("Order");
+
+    const items = await OrderItem.find({ orderId: id }).populate('productId').lean();
+    const logs = await OrderLog.find({ orderId: id }).populate('userId', 'name').sort({ createdAt: 1 }).lean();
+
+    const tableDoc: any = order.tableId;
+    const takenByDoc: any = order.takenById;
+    const chefDoc: any = order.chefId;
+    const servedByDoc: any = order.servedById;
+
+    return {
+      ...order,
+      id: order._id.toString(),
+      table: tableDoc ? { ...tableDoc, id: tableDoc._id.toString(), section: tableDoc.sectionId ? { id: tableDoc.sectionId._id.toString(), name: tableDoc.sectionId.name } : null } : null,
+      takenBy: takenByDoc ? { ...takenByDoc, id: takenByDoc._id.toString() } : null,
+      chef: chefDoc ? { ...chefDoc, id: chefDoc._id.toString() } : null,
+      servedBy: servedByDoc ? { ...servedByDoc, id: servedByDoc._id.toString() } : null,
+      items: items.map(i => {
+        const prodDoc: any = i.productId;
+        return { ...i, id: i._id.toString(), product: prodDoc ? { ...prodDoc, id: prodDoc._id.toString() } : null };
+      }),
+      logs: logs.map(l => {
+        const userDoc: any = l.userId;
+        return { ...l, id: l._id.toString(), user: userDoc ? { ...userDoc, id: userDoc._id.toString() } : null };
+      })
+    };
+  }
+
   async create(input: CreateOrderInput, userId: string) {
     const validated = createOrderSchema.parse(input);
 
-    return await prisma.$transaction(async (tx) => {
-      // Get product prices
+    const session = await mongoose.startSession();
+    session.startTransaction();
+
+    try {
       const productIds = validated.items.map((item) => item.productId);
-      const products = await tx.product.findMany({
-        where: { id: { in: productIds }, isAvailable: true },
-      });
+      const products = await Product.find({ _id: { $in: productIds }, isAvailable: true }).session(session);
 
       if (products.length !== productIds.length) {
         throw new AppError("Some products are unavailable or not found");
       }
 
-      const productMap = new Map(products.map((p) => [p.id, p]));
+      const productMap = new Map(products.map((p) => [p._id.toString(), p]));
 
-      // Calculate total amount
       let totalAmount = 0;
-      const orderItems = validated.items.map((item) => {
+      const orderItemsData = validated.items.map((item) => {
         const product = productMap.get(item.productId)!;
-        const itemTotal = product.price * item.quantity;
-        totalAmount += itemTotal;
+        totalAmount += product.price * item.quantity;
         return {
           productId: item.productId,
           quantity: item.quantity,
@@ -121,55 +145,43 @@ export class OrderService {
         };
       });
 
-      // Create order with items
-      const order = await tx.order.create({
-        data: {
-          tableId: validated.tableId,
-          takenById: userId,
-          totalAmount,
-          notes: validated.notes,
-          items: {
-            create: orderItems,
-          },
-        },
-        include: {
-          table: {
-            include: { section: { select: { id: true, name: true } } },
-          },
-          takenBy: { select: { id: true, name: true } },
-          items: {
-            include: { product: true },
-          },
-        },
-      });
+      const orderArr = await Order.create([{
+        tableId: validated.tableId,
+        takenById: userId,
+        totalAmount,
+        notes: validated.notes,
+      }], { session });
+      const order = orderArr[0];
 
-      // Mark table as occupied
-      await tx.table.update({
-        where: { id: validated.tableId },
-        data: { status: "OCCUPIED" },
-      });
+      const mappedItems = orderItemsData.map(i => ({ ...i, orderId: order._id }));
+      await OrderItem.create(mappedItems, { session });
 
-      // Create order log
-      await tx.orderLog.create({
-        data: {
-          orderId: order.id,
-          action: "ORDER_CREATED",
-          details: `Order created with ${orderItems.length} items. Total: ₹${totalAmount}`,
-          userId,
-        },
-      });
+      await Table.findByIdAndUpdate(validated.tableId, { status: TableStatus.OCCUPIED }, { session });
 
-      logger.info(`Order created: ${order.id} by user ${userId}`);
-      return order;
-    });
+      await OrderLog.create([{
+        orderId: order._id,
+        action: "ORDER_CREATED",
+        details: `Order created with ${orderItemsData.length} items. Total: ₹${totalAmount}`,
+        userId,
+      }], { session });
+
+      await session.commitTransaction();
+      session.endSession();
+
+      logger.info(`Order created: ${order._id} by user ${userId}`);
+      return this.findById(order._id.toString());
+    } catch (e) {
+      await session.abortTransaction();
+      session.endSession();
+      throw e;
+    }
   }
 
-  // ---- Update Order Status ----
   async updateStatus(orderId: string, input: UpdateOrderStatusInput, userId: string) {
     const validated = updateOrderStatusSchema.parse(input);
-    const order = await this.findById(orderId);
+    const order = await Order.findById(orderId);
+    if (!order) throw new NotFoundError("Order");
 
-    // Business rules for status transitions
     const validTransitions: Record<string, string[]> = {
       PENDING: ["IN_PROGRESS", "CANCELLED"],
       IN_PROGRESS: ["COMPLETED", "CANCELLED"],
@@ -179,139 +191,110 @@ export class OrderService {
     };
 
     if (!validTransitions[order.status]?.includes(validated.status)) {
-      throw new AppError(
-        `Cannot transition from ${order.status} to ${validated.status}`
-      );
+      throw new AppError(`Cannot transition from ${order.status} to ${validated.status}`);
     }
 
-    const updateData: Record<string, unknown> = { status: validated.status };
+    const updateData: any = { status: validated.status };
+    if (validated.status === "SERVED") updateData.servedById = userId;
 
-    // If served, record who served
-    if (validated.status === "SERVED") {
-      updateData.servedById = userId;
-    }
+    const session = await mongoose.startSession();
+    session.startTransaction();
 
-    // If cancelled and was pending, free the table
-    if (validated.status === "CANCELLED") {
-      // Check if there are other active orders on this table
-      const otherOrders = await prisma.order.count({
-        where: {
+    try {
+      if (validated.status === "CANCELLED") {
+        const otherOrders = await Order.countDocuments({
           tableId: order.tableId,
-          id: { not: orderId },
-          status: { in: ["PENDING", "IN_PROGRESS", "COMPLETED"] },
-        },
-      });
+          _id: { $ne: orderId },
+          status: { $in: [OrderStatus.PENDING, OrderStatus.IN_PROGRESS, OrderStatus.COMPLETED] },
+        }).session(session);
 
-      if (otherOrders === 0) {
-        await prisma.table.update({
-          where: { id: order.tableId },
-          data: { status: "AVAILABLE" },
-        });
+        if (otherOrders === 0) {
+          await Table.findByIdAndUpdate(order.tableId, { status: TableStatus.AVAILABLE }, { session });
+        }
       }
-    }
 
-    const updated = await prisma.order.update({
-      where: { id: orderId },
-      data: updateData,
-      include: {
-        table: { include: { section: { select: { id: true, name: true } } } },
-        takenBy: { select: { id: true, name: true } },
-        chef: { select: { id: true, name: true } },
-        servedBy: { select: { id: true, name: true } },
-        items: { include: { product: true } },
-      },
-    });
+      await Order.findByIdAndUpdate(orderId, updateData, { session });
 
-    // Log the action
-    await prisma.orderLog.create({
-      data: {
+      await OrderLog.create([{
         orderId,
         action: `STATUS_CHANGED_TO_${validated.status}`,
         details: `Order status changed from ${order.status} to ${validated.status}`,
         userId,
-      },
-    });
+      }], { session });
 
-    logger.info(`Order ${orderId} status changed to ${validated.status}`);
-    return updated;
+      await session.commitTransaction();
+      session.endSession();
+
+      logger.info(`Order ${orderId} status changed to ${validated.status}`);
+      return this.findById(orderId);
+    } catch (e) {
+      await session.abortTransaction();
+      session.endSession();
+      throw e;
+    }
   }
 
-  // ---- Update Order Item Status (Chef) ----
-  async updateItemStatus(
-    itemId: string,
-    input: UpdateOrderItemStatusInput,
-    userId: string
-  ) {
+  async updateItemStatus(itemId: string, input: UpdateOrderItemStatusInput, userId: string) {
     const validated = updateOrderItemStatusSchema.parse(input);
 
-    const item = await prisma.orderItem.findUnique({
-      where: { id: itemId },
-      include: { order: true },
-    });
+    const session = await mongoose.startSession();
+    session.startTransaction();
 
-    if (!item) throw new NotFoundError("Order item");
+    try {
+      const item = await OrderItem.findById(itemId).populate('productId').session(session);
+      if (!item) throw new NotFoundError("Order item");
 
-    // Validate transition
-    const validTransitions: Record<string, string[]> = {
-      PENDING: ["UNDER_COOK"],
-      UNDER_COOK: ["COOKED"],
-      COOKED: [],
-    };
+      const validTransitions: Record<string, string[]> = {
+        PENDING: ["UNDER_COOK"],
+        UNDER_COOK: ["COOKED"],
+        COOKED: [],
+      };
 
-    if (!validTransitions[item.status]?.includes(validated.status)) {
-      throw new AppError(
-        `Cannot transition item from ${item.status} to ${validated.status}`
-      );
-    }
-
-    const updatedItem = await prisma.orderItem.update({
-      where: { id: itemId },
-      data: { status: validated.status },
-      include: { product: true, order: true },
-    });
-
-    // If first item goes to UNDER_COOK, assign chef to order
-    if (validated.status === "UNDER_COOK" && !item.order.chefId) {
-      await prisma.order.update({
-        where: { id: item.orderId },
-        data: { chefId: userId, status: "IN_PROGRESS" },
-      });
-    }
-
-    // Check if all items are cooked -> mark order as COMPLETED
-    if (validated.status === "COOKED") {
-      const allItems = await prisma.orderItem.findMany({
-        where: { orderId: item.orderId },
-      });
-      const allCooked = allItems.every(
-        (i) => i.id === itemId || i.status === "COOKED"
-      );
-      if (allCooked) {
-        await prisma.order.update({
-          where: { id: item.orderId },
-          data: { status: "COMPLETED" },
-        });
+      if (!validTransitions[item.status]?.includes(validated.status)) {
+        throw new AppError(`Cannot transition item from ${item.status} to ${validated.status}`);
       }
-    }
 
-    // Log the action
-    await prisma.orderLog.create({
-      data: {
+      item.status = validated.status as any;
+      await item.save({ session });
+
+      const order = await Order.findById(item.orderId).session(session);
+
+      if (validated.status === "UNDER_COOK" && (!order || !order.chefId)) {
+        await Order.findByIdAndUpdate(item.orderId, { chefId: userId, status: OrderStatus.IN_PROGRESS }, { session });
+      }
+
+      if (validated.status === "COOKED") {
+        const allItems = await OrderItem.find({ orderId: item.orderId }).session(session);
+        const allCooked = allItems.every((i) => i.id === itemId || i.status === "COOKED");
+        if (allCooked) {
+          await Order.findByIdAndUpdate(item.orderId, { status: OrderStatus.COMPLETED }, { session });
+        }
+      }
+
+      const prodName = (item.productId as any).name || "Item";
+      await OrderLog.create([{
         orderId: item.orderId,
         action: `ITEM_STATUS_${validated.status}`,
-        details: `Item "${updatedItem.product.name}" status changed to ${validated.status}`,
+        details: `Item "${prodName}" status changed to ${validated.status}`,
         userId,
-      },
-    });
+      }], { session });
 
-    logger.info(`Order item ${itemId} status changed to ${validated.status}`);
-    return updatedItem;
+      await session.commitTransaction();
+      session.endSession();
+
+      logger.info(`Order item ${itemId} status changed to ${validated.status}`);
+      return item;
+    } catch (e) {
+      await session.abortTransaction();
+      session.endSession();
+      throw e;
+    }
   }
 
-  // ---- Record Payment ----
   async recordPayment(orderId: string, input: RecordPaymentInput, userId: string) {
     const validated = recordPaymentSchema.parse(input);
-    const order = await this.findById(orderId);
+    const order = await Order.findById(orderId);
+    if (!order) throw new NotFoundError("Order");
 
     if (order.paymentStatus === "PAID") {
       throw new AppError("Order is already paid");
@@ -321,52 +304,43 @@ export class OrderService {
       throw new AppError("Order must be served before recording payment");
     }
 
-    const updated = await prisma.$transaction(async (tx) => {
-      const updatedOrder = await tx.order.update({
-        where: { id: orderId },
-        data: {
-          paymentMethod: validated.paymentMethod,
-          paymentStatus: "PAID",
-          paidAt: new Date(),
-        },
-        include: {
-          table: { include: { section: { select: { id: true, name: true } } } },
-          takenBy: { select: { id: true, name: true } },
-          items: { include: { product: true } },
-        },
-      });
+    const session = await mongoose.startSession();
+    session.startTransaction();
 
-      // Check if all orders on this table are paid, then free the table
-      const unpaidOrders = await tx.order.count({
-        where: {
-          tableId: order.tableId,
-          paymentStatus: "UNPAID",
-          status: { not: "CANCELLED" },
-        },
-      });
+    try {
+      await Order.findByIdAndUpdate(orderId, {
+        paymentMethod: validated.paymentMethod,
+        paymentStatus: "PAID",
+        paidAt: new Date(),
+      }, { session });
+
+      const unpaidOrders = await Order.countDocuments({
+        tableId: order.tableId,
+        paymentStatus: PaymentStatus.UNPAID,
+        status: { $ne: OrderStatus.CANCELLED },
+      }).session(session);
 
       if (unpaidOrders === 0) {
-        await tx.table.update({
-          where: { id: order.tableId },
-          data: { status: "AVAILABLE" },
-        });
+        await Table.findByIdAndUpdate(order.tableId, { status: TableStatus.AVAILABLE }, { session });
       }
 
-      // Log the action
-      await tx.orderLog.create({
-        data: {
-          orderId,
-          action: "PAYMENT_RECEIVED",
-          details: `Payment received via ${validated.paymentMethod}. Amount: ₹${order.totalAmount}`,
-          userId,
-        },
-      });
+      await OrderLog.create([{
+        orderId,
+        action: "PAYMENT_RECEIVED",
+        details: `Payment received via ${validated.paymentMethod}. Amount: ₹${order.totalAmount}`,
+        userId,
+      }], { session });
 
-      return updatedOrder;
-    });
+      await session.commitTransaction();
+      session.endSession();
 
-    logger.info(`Payment recorded for order ${orderId}`);
-    return updated;
+      logger.info(`Payment recorded for order ${orderId}`);
+      return this.findById(orderId);
+    } catch (e) {
+      await session.abortTransaction();
+      session.endSession();
+      throw e;
+    }
   }
 }
 

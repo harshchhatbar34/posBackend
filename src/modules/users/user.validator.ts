@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { Role } from "@prisma/client";
+import { Role } from "@/models/User";
 
 // ============ User Validators ============
 

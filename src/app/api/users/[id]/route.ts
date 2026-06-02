@@ -1,3 +1,4 @@
+import connectToDatabase from "@/lib/mongoose";
 import { NextRequest } from "next/server";
 import { userService } from "@/modules/users/user.service";
 import { authenticate, authorize } from "@/middleware/auth";
@@ -9,6 +10,8 @@ type RouteParams = { params: Promise<{ id: string }> };
 // GET /api/users/[id]
 export async function GET(request: NextRequest, { params }: RouteParams) {
   try {
+    await connectToDatabase();
+
     const user = await authenticate(request);
     authorize("SUPER_ADMIN", "ADMIN")(user.role);
 
@@ -25,6 +28,8 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 // PATCH /api/users/[id]
 export async function PATCH(request: NextRequest, { params }: RouteParams) {
   try {
+    await connectToDatabase();
+
     const user = await authenticate(request);
     authorize("SUPER_ADMIN", "ADMIN")(user.role);
 
@@ -50,6 +55,8 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
 // DELETE /api/users/[id]
 export async function DELETE(request: NextRequest, { params }: RouteParams) {
   try {
+    await connectToDatabase();
+
     const user = await authenticate(request);
     authorize("SUPER_ADMIN", "ADMIN")(user.role);
 

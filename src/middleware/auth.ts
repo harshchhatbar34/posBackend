@@ -2,8 +2,7 @@ import { NextRequest } from "next/server";
 import jwt from "jsonwebtoken";
 import { JWT_SECRET, JWT_REFRESH_SECRET, JWT_EXPIRES_IN, JWT_REFRESH_EXPIRES_IN } from "@/lib/constants";
 import { UnauthorizedError, ForbiddenError } from "@/utils/errors";
-import { Role } from "@prisma/client";
-import prisma from "@/lib/prisma";
+import User, { Role } from "@/models/User";
 
 // ============ JWT Helpers ============
 
@@ -54,16 +53,19 @@ export async function authenticate(request: NextRequest) {
   const payload = verifyAccessToken(token);
 
   // Verify user still exists and is active
-  const user = await prisma.user.findUnique({
-    where: { id: payload.userId },
-    select: { id: true, name: true, email: true, role: true, isActive: true },
-  });
+  const user = await User.findById(payload.userId).select('name email role isActive');
 
   if (!user || !user.isActive) {
     throw new UnauthorizedError("User not found or deactivated");
   }
 
-  return user;
+  return {
+    id: user._id.toString(),
+    name: user.name,
+    email: user.email,
+    role: user.role as Role,
+    isActive: user.isActive
+  };
 }
 
 // ============ RBAC Middleware ============

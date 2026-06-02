@@ -1,4 +1,5 @@
-import prisma from "@/lib/prisma";
+import Category from "@/models/Category";
+import Product from "@/models/Product";
 import {
   createCategorySchema,
   updateCategorySchema,
@@ -16,50 +17,63 @@ export class CategoryService {
     const skip = (page - 1) * pageSize;
 
     const where = {
-      ...(search ? { name: { contains: search, mode: "insensitive" as const } } : {}),
+      ...(search ? { name: { $regex: search, $options: "i" } } : {}),
     };
 
     const [categories, total] = await Promise.all([
-      prisma.category.findMany({
-        where,
-        include: { _count: { select: { products: true } } },
-        skip,
-        take: pageSize,
-        orderBy: { [sortBy || "name"]: sortOrder === "desc" ? "desc" : "asc" },
-      }),
-      prisma.category.count({ where }),
+      Category.aggregate([
+        { $match: where },
+        { $sort: { [sortBy || "name"]: sortOrder === "desc" ? -1 : 1 } },
+        { $skip: skip },
+        { $limit: pageSize },
+        {
+          $lookup: {
+            from: "products",
+            localField: "_id",
+            foreignField: "categoryId",
+            as: "products",
+          },
+        },
+        {
+          $addFields: {
+            _count: { products: { $size: "$products" } },
+            id: { $toString: "$_id" },
+          },
+        },
+        { $project: { products: 0 } },
+      ]),
+      Category.countDocuments(where),
     ]);
 
     return { categories, meta: paginationMeta(page, pageSize, total) };
   }
 
   async findById(id: string) {
-    const category = await prisma.category.findUnique({
-      where: { id },
-      include: { products: true },
-    });
+    const category = await Category.findById(id).lean();
     if (!category) throw new NotFoundError("Category");
-    return category;
+
+    const products = await Product.find({ categoryId: id }).lean();
+    return { ...category, id: category._id.toString(), products: products.map(p => ({ ...p, id: p._id.toString() })) };
   }
 
   async create(input: CreateCategoryInput) {
     const validated = createCategorySchema.parse(input);
-    const category = await prisma.category.create({ data: validated });
+    const category = await Category.create(validated);
     logger.info(`Category created: ${category.name}`);
     return category;
   }
 
   async update(id: string, input: UpdateCategoryInput) {
     const validated = updateCategorySchema.parse(input);
-    await this.findById(id);
-    const category = await prisma.category.update({ where: { id }, data: validated });
+    const category = await Category.findByIdAndUpdate(id, validated, { new: true });
+    if (!category) throw new NotFoundError("Category");
     logger.info(`Category updated: ${category.name}`);
     return category;
   }
 
   async delete(id: string) {
-    await this.findById(id);
-    await prisma.category.update({ where: { id }, data: { isActive: false } });
+    const category = await Category.findByIdAndUpdate(id, { isActive: false });
+    if (!category) throw new NotFoundError("Category");
     logger.info(`Category deactivated: ${id}`);
     return { message: "Category deactivated successfully" };
   }

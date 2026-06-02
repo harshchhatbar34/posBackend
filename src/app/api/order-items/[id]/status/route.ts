@@ -1,3 +1,4 @@
+import connectToDatabase from "@/lib/mongoose";
 import { NextRequest } from "next/server";
 import { orderService } from "@/modules/orders/order.service";
 import { authenticate, authorize } from "@/middleware/auth";
@@ -9,6 +10,8 @@ type RouteParams = { params: Promise<{ id: string }> };
 // PATCH /api/order-items/[id]/status
 export async function PATCH(request: NextRequest, { params }: RouteParams) {
   try {
+    await connectToDatabase();
+
     const user = await authenticate(request);
     authorize("SUPER_ADMIN", "ADMIN", "CHEF")(user.role);
     const { id } = await params;
