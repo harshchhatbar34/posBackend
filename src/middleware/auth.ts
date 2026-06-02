@@ -70,8 +70,8 @@ export async function authenticate(request: NextRequest) {
 
 // ============ RBAC Middleware ============
 
-export function authorize(...allowedRoles: Role[]) {
-  return (userRole: Role) => {
+export function authorize(...allowedRoles: string[]) {
+  return (userRole: string) => {
     if (!allowedRoles.includes(userRole)) {
       throw new ForbiddenError("You do not have permission to perform this action");
     }

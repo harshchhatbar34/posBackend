@@ -4,7 +4,7 @@ import { InventoryUnit } from "@/models/InventoryItem";
 export const createInventoryItemSchema = z.object({
   name: z.string().min(2, "Name must be at least 2 characters"),
   quantity: z.number().min(0).default(0),
-  unit: z.nativeEnum(InventoryUnit).default("PIECE"),
+  unit: z.nativeEnum(InventoryUnit).default(InventoryUnit.PIECE),
   location: z.string().optional(),
   pricePerUnit: z.number().min(0).default(0),
   minStock: z.number().min(0).default(0),
