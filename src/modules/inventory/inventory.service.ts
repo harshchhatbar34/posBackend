@@ -51,13 +51,13 @@ export class InventoryService {
     const stockLogs = await InventoryStockLog.find({ inventoryItemId: id })
       .sort({ createdAt: -1 })
       .limit(20)
-      .populate('addedBy', 'name id')
+      .populate('addedById', 'name id')
       .lean();
 
     const usageLogs = await InventoryUsageLog.find({ inventoryItemId: id })
       .sort({ createdAt: -1 })
       .limit(20)
-      .populate('takenBy', 'name id')
+      .populate('takenById', 'name id')
       .lean();
 
     return {

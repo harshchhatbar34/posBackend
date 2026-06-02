@@ -35,8 +35,8 @@ export class ProductService {
 
     const [products, total] = await Promise.all([
       Product.find(where)
-        .populate("category", "name")
-        .populate("section", "name")
+        .populate("categoryId", "name")
+        .populate("sectionId", "name")
         .sort(sortOpt)
         .skip(skip)
         .limit(pageSize)
@@ -56,8 +56,8 @@ export class ProductService {
 
   async findById(id: string) {
     const product = await Product.findById(id)
-      .populate("category", "name")
-      .populate("section", "name")
+      .populate("categoryId", "name")
+      .populate("sectionId", "name")
       .lean();
     if (!product) throw new NotFoundError("Product");
     return {
