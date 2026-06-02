@@ -1,6 +1,19 @@
 import mongoose from 'mongoose';
 import { logger } from '@/utils/logger';
 
+// Import all models to ensure they are registered before any queries run
+import '@/models/User';
+import '@/models/Category';
+import '@/models/Section';
+import '@/models/Product';
+import '@/models/Table';
+import '@/models/Order';
+import '@/models/OrderItem';
+import '@/models/OrderLog';
+import '@/models/InventoryItem';
+import '@/models/InventoryStockLog';
+import '@/models/InventoryUsageLog';
+
 const MONGODB_URI = process.env.MONGODB_URI;
 
 if (!MONGODB_URI) {

@@ -1,5 +1,7 @@
 import mongoose from "mongoose";
 import Product from "@/models/Product";
+import Category from "@/models/Category";
+import Section from "@/models/Section";
 import {
   createProductSchema,
   updateProductSchema,
