@@ -9,10 +9,12 @@ import {
   updateOrderStatusSchema,
   updateOrderItemStatusSchema,
   recordPaymentSchema,
+  addOrderItemsSchema,
   type CreateOrderInput,
   type UpdateOrderStatusInput,
   type UpdateOrderItemStatusInput,
   type RecordPaymentInput,
+  type AddOrderItemsInput,
 } from "./order.validator";
 import { paginationSchema, type PaginationParams } from "@/validators/common";
 import { NotFoundError, AppError } from "@/utils/errors";
@@ -150,11 +152,11 @@ export class OrderService {
         takenById: userId,
         totalAmount,
         notes: validated.notes,
-      }], { session });
+      }], { session, ordered: true });
       const order = orderArr[0];
 
       const mappedItems = orderItemsData.map(i => ({ ...i, orderId: order._id }));
-      await OrderItem.create(mappedItems, { session });
+      await OrderItem.create(mappedItems, { session, ordered: true });
 
       await Table.findByIdAndUpdate(validated.tableId, { status: TableStatus.OCCUPIED }, { session });
 
@@ -163,7 +165,7 @@ export class OrderService {
         action: "ORDER_CREATED",
         details: `Order created with ${orderItemsData.length} items. Total: ₹${totalAmount}`,
         userId,
-      }], { session });
+      }], { session, ordered: true });
 
       await session.commitTransaction();
       session.endSession();
@@ -220,7 +222,7 @@ export class OrderService {
         action: `STATUS_CHANGED_TO_${validated.status}`,
         details: `Order status changed from ${order.status} to ${validated.status}`,
         userId,
-      }], { session });
+      }], { session, ordered: true });
 
       await session.commitTransaction();
       session.endSession();
@@ -277,7 +279,7 @@ export class OrderService {
         action: `ITEM_STATUS_${validated.status}`,
         details: `Item "${prodName}" status changed to ${validated.status}`,
         userId,
-      }], { session });
+      }], { session, ordered: true });
 
       await session.commitTransaction();
       session.endSession();
@@ -329,13 +331,144 @@ export class OrderService {
         action: "PAYMENT_RECEIVED",
         details: `Payment received via ${validated.paymentMethod}. Amount: ₹${order.totalAmount}`,
         userId,
-      }], { session });
+      }], { session, ordered: true });
 
       await session.commitTransaction();
       session.endSession();
 
       logger.info(`Payment recorded for order ${orderId}`);
       return this.findById(orderId);
+    } catch (e) {
+      await session.abortTransaction();
+      session.endSession();
+      throw e;
+    }
+  }
+  async addItems(orderId: string, input: AddOrderItemsInput, userId: string) {
+    const validated = addOrderItemsSchema.parse(input);
+
+    const order = await Order.findById(orderId);
+    if (!order) throw new NotFoundError("Order");
+    if (order.status === OrderStatus.CANCELLED) throw new AppError("Cannot add items to a cancelled order");
+    if (order.paymentStatus === "PAID") throw new AppError("Cannot add items to a paid order");
+
+    const session = await mongoose.startSession();
+    session.startTransaction();
+
+    try {
+      const productIds = validated.items.map((item) => item.productId);
+      const products = await Product.find({ _id: { $in: productIds }, isAvailable: true }).session(session);
+
+      if (products.length !== productIds.length) {
+        throw new AppError("Some products are unavailable or not found");
+      }
+
+      const productMap = new Map(products.map((p) => [p._id.toString(), p]));
+
+      let additionalAmount = 0;
+      const newItems = validated.items.map((item) => {
+        const product = productMap.get(item.productId)!;
+        additionalAmount += product.price * item.quantity;
+        return {
+          orderId,
+          productId: item.productId,
+          quantity: item.quantity,
+          price: product.price,
+        };
+      });
+
+      await OrderItem.insertMany(newItems, { session });
+      await Order.findByIdAndUpdate(orderId, { $inc: { totalAmount: additionalAmount } }, { session });
+
+      await OrderLog.create([{
+        orderId,
+        action: "ITEMS_ADDED",
+        details: `${newItems.length} item(s) added to order. Additional: ₹${additionalAmount}`,
+        userId,
+      }], { session, ordered: true });
+
+      await session.commitTransaction();
+      session.endSession();
+
+      logger.info(`Added ${newItems.length} items to order ${orderId}`);
+      return this.findById(orderId);
+    } catch (e) {
+      await session.abortTransaction();
+      session.endSession();
+      throw e;
+    }
+  }
+
+  async removeItem(orderId: string, itemId: string, userId: string) {
+    const order = await Order.findById(orderId);
+    if (!order) throw new NotFoundError("Order");
+    if (order.status === OrderStatus.CANCELLED) throw new AppError("Cannot remove items from a cancelled order");
+    if (order.paymentStatus === "PAID") throw new AppError("Cannot remove items from a paid order");
+
+    const item = await OrderItem.findOne({ _id: itemId, orderId });
+    if (!item) throw new NotFoundError("Order item");
+    if (item.status !== "PENDING") throw new AppError("Only PENDING items can be removed");
+
+    const session = await mongoose.startSession();
+    session.startTransaction();
+
+    try {
+      // Check this isn't the last item in the order
+      const itemCount = await OrderItem.countDocuments({ orderId }).session(session);
+      if (itemCount <= 1) throw new AppError("Cannot remove the last item. Cancel the order instead.");
+
+      const deductAmount = item.price * item.quantity;
+      await OrderItem.findByIdAndDelete(itemId, { session });
+      await Order.findByIdAndUpdate(orderId, { $inc: { totalAmount: -deductAmount } }, { session });
+
+      await OrderLog.create([{
+        orderId,
+        action: "ITEM_REMOVED",
+        details: `Item removed from order. Deducted: ₹${deductAmount}`,
+        userId,
+      }], { session, ordered: true });
+
+      await session.commitTransaction();
+      session.endSession();
+
+      logger.info(`Removed item ${itemId} from order ${orderId}`);
+      return this.findById(orderId);
+    } catch (e) {
+      await session.abortTransaction();
+      session.endSession();
+      throw e;
+    }
+  }
+
+  async deleteOrder(orderId: string, userId: string) {
+    const order = await Order.findById(orderId);
+    if (!order) throw new NotFoundError("Order");
+    if (order.paymentStatus === "PAID") throw new AppError("Cannot delete a paid order");
+
+    const session = await mongoose.startSession();
+    session.startTransaction();
+
+    try {
+      await OrderItem.deleteMany({ orderId }, { session });
+      await OrderLog.deleteMany({ orderId }, { session });
+      await Order.findByIdAndDelete(orderId, { session });
+
+      // Free up the table if no other active orders remain
+      const otherOrders = await Order.countDocuments({
+        tableId: order.tableId,
+        _id: { $ne: orderId },
+        status: { $in: [OrderStatus.PENDING, OrderStatus.IN_PROGRESS, OrderStatus.COMPLETED] },
+      }).session(session);
+
+      if (otherOrders === 0) {
+        await Table.findByIdAndUpdate(order.tableId, { status: TableStatus.AVAILABLE }, { session });
+      }
+
+      await session.commitTransaction();
+      session.endSession();
+
+      logger.info(`Order ${orderId} permanently deleted by user ${userId}`);
+      return { message: "Order deleted successfully" };
     } catch (e) {
       await session.abortTransaction();
       session.endSession();

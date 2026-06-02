@@ -11,7 +11,6 @@ type RouteParams = { params: Promise<{ id: string }> };
 export async function GET(request: NextRequest, { params }: RouteParams) {
   try {
     await connectToDatabase();
-
     await authenticate(request);
     const { id } = await params;
     const result = await orderService.findById(id);
@@ -20,3 +19,17 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     return handleError(error);
   }
 }
+
+// DELETE /api/orders/[id]
+export async function DELETE(request: NextRequest, { params }: RouteParams) {
+  try {
+    await connectToDatabase();
+    const user = await authenticate(request);
+    const { id } = await params;
+    const result = await orderService.deleteOrder(id, user.id);
+    return successResponse(result, "Order deleted successfully");
+  } catch (error) {
+    return handleError(error);
+  }
+}
+

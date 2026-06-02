@@ -29,3 +29,14 @@ export type CreateOrderInput = z.infer<typeof createOrderSchema>;
 export type UpdateOrderStatusInput = z.infer<typeof updateOrderStatusSchema>;
 export type UpdateOrderItemStatusInput = z.infer<typeof updateOrderItemStatusSchema>;
 export type RecordPaymentInput = z.infer<typeof recordPaymentSchema>;
+
+export const addOrderItemsSchema = z.object({
+  items: z.array(orderItemInputSchema).min(1, "At least one item is required"),
+});
+
+export const removeOrderItemSchema = z.object({
+  itemId: z.string().min(1, "Item ID is required"),
+});
+
+export type AddOrderItemsInput = z.infer<typeof addOrderItemsSchema>;
+export type RemoveOrderItemInput = z.infer<typeof removeOrderItemSchema>;
