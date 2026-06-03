@@ -155,6 +155,8 @@ export class OrderService {
         takenById: userId,
         totalAmount,
         notes: validated.notes,
+        customerName: validated.customerName,
+        customerNumber: validated.customerNumber,
       }], { session, ordered: true });
       const order = orderArr[0];
 

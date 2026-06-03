@@ -11,6 +11,8 @@ export const createOrderSchema = z.object({
   tableId: z.string().min(1, "Table is required"),
   items: z.array(orderItemInputSchema).min(1, "At least one item is required"),
   notes: z.string().optional(),
+  customerName: z.string().optional(),
+  customerNumber: z.string().optional(),
 });
 
 export const updateOrderStatusSchema = z.object({

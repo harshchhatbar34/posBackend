@@ -27,6 +27,15 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
 // PATCH /api/users/[id]
 export async function PATCH(request: NextRequest, { params }: RouteParams) {
+  return handleUserUpdate(request, params);
+}
+
+// PUT /api/users/[id]
+export async function PUT(request: NextRequest, { params }: RouteParams) {
+  return handleUserUpdate(request, params);
+}
+
+async function handleUserUpdate(request: NextRequest, params: RouteParams["params"]) {
   try {
     await connectToDatabase();
 

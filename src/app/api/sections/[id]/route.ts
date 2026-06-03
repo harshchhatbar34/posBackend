@@ -23,6 +23,15 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 
 // PATCH /api/sections/[id]
 export async function PATCH(request: NextRequest, { params }: RouteParams) {
+  return handleSectionUpdate(request, params);
+}
+
+// PUT /api/sections/[id]
+export async function PUT(request: NextRequest, { params }: RouteParams) {
+  return handleSectionUpdate(request, params);
+}
+
+async function handleSectionUpdate(request: NextRequest, params: RouteParams["params"]) {
   try {
     await connectToDatabase();
 

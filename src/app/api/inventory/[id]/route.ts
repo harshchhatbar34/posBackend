@@ -22,6 +22,14 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
 }
 
 export async function PATCH(request: NextRequest, { params }: RouteParams) {
+  return handleInventoryUpdate(request, params);
+}
+
+export async function PUT(request: NextRequest, { params }: RouteParams) {
+  return handleInventoryUpdate(request, params);
+}
+
+async function handleInventoryUpdate(request: NextRequest, params: RouteParams["params"]) {
   try {
     await connectToDatabase();
 
