@@ -4,7 +4,7 @@ import { OrderItemStatus } from "@/models/OrderItem";
 
 export const orderItemInputSchema = z.object({
   productId: z.string().min(1, "Product is required"),
-  quantity: z.number().int().positive("Quantity must be at least 1"),
+  quantity: z.coerce.number().int().positive("Quantity must be at least 1"),
 });
 
 export const createOrderSchema = z.object({
