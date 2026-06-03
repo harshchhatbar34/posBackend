@@ -9,6 +9,15 @@ type RouteParams = { params: Promise<{ id: string }> };
 
 // PATCH /api/orders/[id]/payment
 export async function PATCH(request: NextRequest, { params }: RouteParams) {
+  return handlePayment(request, params);
+}
+
+// POST /api/orders/[id]/payment
+export async function POST(request: NextRequest, { params }: RouteParams) {
+  return handlePayment(request, params);
+}
+
+async function handlePayment(request: NextRequest, params: Promise<{ id: string }>) {
   try {
     await connectToDatabase();
 

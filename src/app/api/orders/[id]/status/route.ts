@@ -9,6 +9,15 @@ type RouteParams = { params: Promise<{ id: string }> };
 
 // PATCH /api/orders/[id]/status
 export async function PATCH(request: NextRequest, { params }: RouteParams) {
+  return handleStatusUpdate(request, params);
+}
+
+// PUT /api/orders/[id]/status
+export async function PUT(request: NextRequest, { params }: RouteParams) {
+  return handleStatusUpdate(request, params);
+}
+
+async function handleStatusUpdate(request: NextRequest, params: Promise<{ id: string }>) {
   try {
     await connectToDatabase();
 
