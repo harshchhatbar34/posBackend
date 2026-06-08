@@ -395,26 +395,33 @@ export class OrderService {
       const itemsToInsert: any[] = [];
       let itemsMergedCount = 0;
 
+      // Aggregate quantities by productId to prevent duplicates in the same payload
+      const aggregatedItems = new Map<string, number>();
       for (const item of validated.items) {
-        const product = productMap.get(item.productId)!;
-        additionalAmount += product.price * item.quantity;
+        const currentQty = aggregatedItems.get(item.productId) || 0;
+        aggregatedItems.set(item.productId, currentQty + item.quantity);
+      }
+
+      for (const [productId, quantity] of aggregatedItems.entries()) {
+        const product = productMap.get(productId)!;
+        additionalAmount += product.price * quantity;
 
         // Check if there is an existing PENDING item for this product
         const existingItem = await OrderItem.findOne({
           orderId,
-          productId: item.productId,
+          productId,
           status: "PENDING",
         }).session(session);
 
         if (existingItem) {
-          existingItem.quantity += item.quantity;
+          existingItem.quantity += quantity;
           await existingItem.save({ session });
           itemsMergedCount++;
         } else {
           itemsToInsert.push({
             orderId,
-            productId: item.productId,
-            quantity: item.quantity,
+            productId,
+            quantity,
             price: product.price,
             status: "PENDING",
           });
