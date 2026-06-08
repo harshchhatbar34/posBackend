@@ -5,7 +5,7 @@ import User, { Role } from "../models/User";
 import Section from "../models/Section";
 import Table, { TableStatus } from "../models/Table";
 import Category from "../models/Category";
-import Product from "../models/Product";
+import Product, { ProductAvailability } from "../models/Product";
 import InventoryItem, { InventoryUnit } from "../models/InventoryItem";
 
 dotenv.config();
@@ -87,7 +87,7 @@ async function main() {
       price: 50,
       categoryId: beverages._id,
       sectionId: groundFloor._id,
-      isAvailable: true,
+      availability: ProductAvailability.ACTIVE,
     },
     {
       name: "Paneer Butter Masala",
@@ -95,7 +95,7 @@ async function main() {
       price: 250,
       categoryId: mains._id,
       sectionId: rooftop._id,
-      isAvailable: true,
+      availability: ProductAvailability.ACTIVE,
     },
   ];
 

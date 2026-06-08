@@ -5,7 +5,7 @@ import { successResponse } from "@/utils/api-response";
 import { handleError } from "@/utils/error-handler";
 import ProductLog from "@/models/ProductLog";
 import { NotFoundError } from "@/utils/errors";
-import Product from "@/models/Product";
+import Product, { ProductAvailability } from "@/models/Product";
 
 type RouteParams = { params: Promise<{ id: string }> };
 
@@ -20,7 +20,10 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     const { id } = await params;
 
     // Verify product exists
-    const product = await Product.findById(id).lean();
+    const product = await Product.findOne({
+      _id: id,
+      availability: { $ne: ProductAvailability.DELETED },
+    }).lean();
     if (!product) throw new NotFoundError("Product");
 
     const logs = await ProductLog.find({ productId: id })

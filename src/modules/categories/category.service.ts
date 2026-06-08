@@ -1,5 +1,6 @@
+import mongoose from "mongoose";
 import Category from "@/models/Category";
-import Product from "@/models/Product";
+import Product, { ProductAvailability } from "@/models/Product";
 import {
   createCategorySchema,
   updateCategorySchema,
@@ -12,14 +13,20 @@ import { paginationMeta } from "@/utils/api-response";
 import { logger } from "@/utils/logger";
 
 export class CategoryService {
-  async findAll(params: PaginationParams) {
+  async findAll(params: PaginationParams & { sectionId?: string }) {
     const { page, pageSize, search, sortBy, sortOrder } = paginationSchema.parse(params);
     const skip = (page - 1) * pageSize;
 
-    const where = {
-      isActive: { $ne: false },
-      ...(search ? { name: { $regex: search, $options: "i" } } : {}),
-    };
+    const where: any = { isActive: { $ne: false } };
+
+    // Filter by section if provided
+    if (params.sectionId) {
+      where.sectionId = new mongoose.Types.ObjectId(params.sectionId);
+    }
+
+    if (search) {
+      where.name = { $regex: search, $options: "i" };
+    }
 
     const [categories, total] = await Promise.all([
       Category.aggregate([
@@ -27,6 +34,14 @@ export class CategoryService {
         { $sort: { [sortBy || "name"]: sortOrder === "desc" ? -1 : 1 } },
         { $skip: skip },
         { $limit: pageSize },
+        {
+          $lookup: {
+            from: "sections",
+            localField: "sectionId",
+            foreignField: "_id",
+            as: "section",
+          },
+        },
         {
           $lookup: {
             from: "products",
@@ -39,6 +54,7 @@ export class CategoryService {
           $addFields: {
             _count: { products: { $size: "$products" } },
             id: { $toString: "$_id" },
+            section: { $arrayElemAt: ["$section", 0] },
           },
         },
         { $project: { products: 0 } },
@@ -50,18 +66,31 @@ export class CategoryService {
   }
 
   async findById(id: string) {
-    const category = await Category.findById(id).lean();
+    const category = await Category.findById(id)
+      .populate("sectionId", "name")
+      .lean();
     if (!category) throw new NotFoundError("Category");
 
-    const products = await Product.find({ categoryId: id }).lean();
-    return { ...category, id: category._id.toString(), products: products.map(p => ({ ...p, id: p._id.toString() })) };
+    const products = await Product.find({
+      categoryId: id,
+      availability: { $ne: ProductAvailability.DELETED },
+    }).lean();
+
+    return {
+      ...category,
+      id: category._id.toString(),
+      section: category.sectionId
+        ? { ...(category.sectionId as any), id: (category.sectionId as any)._id.toString() }
+        : null,
+      products: products.map((p) => ({ ...p, id: p._id.toString() })),
+    };
   }
 
   async create(input: CreateCategoryInput) {
     const validated = createCategorySchema.parse(input);
     const category = await Category.create(validated);
     logger.info(`Category created: ${category.name}`);
-    return category;
+    return this.findById(category._id.toString());
   }
 
   async update(id: string, input: UpdateCategoryInput) {
@@ -69,7 +98,7 @@ export class CategoryService {
     const category = await Category.findByIdAndUpdate(id, validated, { new: true });
     if (!category) throw new NotFoundError("Category");
     logger.info(`Category updated: ${category.name}`);
-    return category;
+    return this.findById(id);
   }
 
   async delete(id: string) {
@@ -81,3 +110,5 @@ export class CategoryService {
 }
 
 export const categoryService = new CategoryService();
+
+

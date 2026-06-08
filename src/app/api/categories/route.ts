@@ -17,6 +17,7 @@ export async function GET(request: NextRequest) {
       search: searchParams.get("search") || undefined,
       sortBy: searchParams.get("sortBy") || undefined,
       sortOrder: searchParams.get("sortOrder") || undefined,
+      sectionId: searchParams.get("sectionId") || undefined,
     };
     const result = await categoryService.findAll(params as never);
     return successResponse(result.categories, undefined, 200, result.meta);
@@ -30,7 +31,7 @@ export async function POST(request: NextRequest) {
     await connectToDatabase();
 
     const user = await authenticate(request);
-    authorize("SUPER_ADMIN", "ADMIN", "MANAGER")(user.role);
+    authorize("SUPER_ADMIN", "ADMIN")(user.role);
     const body = await request.json();
     const result = await categoryService.create(body);
     return successResponse(result, "Category created successfully", 201);

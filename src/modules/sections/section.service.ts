@@ -1,7 +1,7 @@
 import mongoose from "mongoose";
 import Section from "@/models/Section";
 import Table from "@/models/Table";
-import Product from "@/models/Product";
+import Product, { ProductAvailability } from "@/models/Product";
 import {
   createSectionSchema,
   updateSectionSchema,
@@ -72,7 +72,7 @@ export class SectionService {
     if (!section) throw new NotFoundError("Section");
 
     const tables = await Table.find({ sectionId: id }).lean();
-    const productCount = await Product.countDocuments({ sectionId: id });
+    const productCount = await Product.countDocuments({ sectionId: id, availability: { $ne: ProductAvailability.DELETED } });
 
     return {
       ...section,

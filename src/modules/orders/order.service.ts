@@ -2,7 +2,7 @@ import mongoose from "mongoose";
 import Order, { OrderStatus, PaymentStatus } from "@/models/Order";
 import OrderItem, { OrderItemStatus } from "@/models/OrderItem";
 import OrderLog from "@/models/OrderLog";
-import Product from "@/models/Product";
+import Product, { ProductAvailability } from "@/models/Product";
 import Table, { TableStatus } from "@/models/Table";
 import {
   createOrderSchema,
@@ -139,7 +139,7 @@ export class OrderService {
 
     try {
       const productIds = validated.items.map((item) => item.productId);
-      const products = await Product.find({ _id: { $in: productIds }, isAvailable: true }).session(session);
+      const products = await Product.find({ _id: { $in: productIds }, availability: ProductAvailability.ACTIVE }).session(session);
 
       if (products.length !== productIds.length) {
         throw new AppError("Some products are unavailable or not found");
@@ -383,7 +383,7 @@ export class OrderService {
 
     try {
       const productIds = validated.items.map((item) => item.productId);
-      const products = await Product.find({ _id: { $in: productIds }, isAvailable: true }).session(session);
+      const products = await Product.find({ _id: { $in: productIds }, availability: ProductAvailability.ACTIVE }).session(session);
 
       if (products.length !== productIds.length) {
         throw new AppError("Some products are unavailable or not found");
