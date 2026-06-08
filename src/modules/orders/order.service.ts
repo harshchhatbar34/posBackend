@@ -392,31 +392,53 @@ export class OrderService {
       const productMap = new Map(products.map((p) => [p._id.toString(), p]));
 
       let additionalAmount = 0;
-      const newItems = validated.items.map((item) => {
+      const itemsToInsert: any[] = [];
+      let itemsMergedCount = 0;
+
+      for (const item of validated.items) {
         const product = productMap.get(item.productId)!;
         additionalAmount += product.price * item.quantity;
-        return {
+
+        // Check if there is an existing PENDING item for this product
+        const existingItem = await OrderItem.findOne({
           orderId,
           productId: item.productId,
-          quantity: item.quantity,
-          price: product.price,
-        };
-      });
+          status: "PENDING",
+        }).session(session);
 
-      await OrderItem.insertMany(newItems, { session });
+        if (existingItem) {
+          existingItem.quantity += item.quantity;
+          await existingItem.save({ session });
+          itemsMergedCount++;
+        } else {
+          itemsToInsert.push({
+            orderId,
+            productId: item.productId,
+            quantity: item.quantity,
+            price: product.price,
+            status: "PENDING",
+          });
+        }
+      }
+
+      if (itemsToInsert.length > 0) {
+        await OrderItem.insertMany(itemsToInsert, { session });
+      }
+
       await Order.findByIdAndUpdate(orderId, { $inc: { totalAmount: additionalAmount } }, { session });
 
+      const totalChanges = itemsToInsert.length + itemsMergedCount;
       await OrderLog.create([{
         orderId,
         action: "ITEMS_ADDED",
-        details: `${newItems.length} item(s) added to order. Additional: ₹${additionalAmount}`,
+        details: `${totalChanges} item(s) added/updated in order. Additional: ₹${additionalAmount}`,
         userId,
       }], { session, ordered: true });
 
       await session.commitTransaction();
       session.endSession();
 
-      logger.info(`Added ${newItems.length} items to order ${orderId}`);
+      logger.info(`Added/updated ${totalChanges} items in order ${orderId}`);
       return this.findById(orderId);
     } catch (e) {
       await session.abortTransaction();

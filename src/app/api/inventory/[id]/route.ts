@@ -34,10 +34,10 @@ async function handleInventoryUpdate(request: NextRequest, params: RouteParams["
     await connectToDatabase();
 
     const user = await authenticate(request);
-    authorize("SUPER_ADMIN", "ADMIN", "MANAGER")(user.role);
+    authorize("SUPER_ADMIN", "ADMIN", "MANAGER", "CHEF")(user.role);
     const { id } = await params;
     const body = await request.json();
-    const result = await inventoryService.update(id, body);
+    const result = await inventoryService.update(id, body, user.id);
     return successResponse(result, "Inventory item updated");
   } catch (error) {
     return handleError(error);

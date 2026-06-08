@@ -12,6 +12,7 @@ export enum InventoryUnit {
 
 export interface IInventoryItem extends Document {
   name: string;
+  initialQuantity: number;
   quantity: number;
   unit: InventoryUnit;
   location?: string;
@@ -25,6 +26,7 @@ export interface IInventoryItem extends Document {
 const InventoryItemSchema: Schema = new Schema(
   {
     name: { type: String, required: true },
+    initialQuantity: { type: Number, default: 0 },
     quantity: { type: Number, default: 0 },
     unit: { type: String, enum: Object.values(InventoryUnit), default: InventoryUnit.PIECE },
     location: { type: String },

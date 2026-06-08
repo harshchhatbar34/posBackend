@@ -72,17 +72,58 @@ export class InventoryService {
 
   async create(input: CreateInventoryItemInput) {
     const validated = createInventoryItemSchema.parse(input);
+    validated.quantity = validated.initialQuantity;
     const item = await InventoryItem.create(validated);
     logger.info(`Inventory item created: ${item.name}`);
     return item;
   }
 
-  async update(id: string, input: UpdateInventoryItemInput) {
+  async update(id: string, input: UpdateInventoryItemInput, userId?: string) {
     const validated = updateInventoryItemSchema.parse(input);
-    const item = await InventoryItem.findByIdAndUpdate(id, validated, { new: true });
-    if (!item) throw new NotFoundError("Inventory item");
-    logger.info(`Inventory item updated: ${item.name}`);
-    return item;
+
+    const session = await mongoose.startSession();
+    session.startTransaction();
+
+    try {
+      const item = await InventoryItem.findById(id).session(session);
+      if (!item) throw new NotFoundError("Inventory item");
+
+      // Log quantity changes manually if quantity is provided and differs
+      if (validated.quantity !== undefined && validated.quantity !== item.quantity && userId) {
+        const diff = validated.quantity - item.quantity;
+        if (diff > 0) {
+          await InventoryStockLog.create(
+            [{ inventoryItemId: id, quantityAdded: diff, note: "Manual update", addedById: userId }],
+            { session }
+          );
+        } else {
+          await InventoryUsageLog.create(
+            [{ inventoryItemId: id, quantityUsed: Math.abs(diff), note: "Manual update", takenById: userId }],
+            { session }
+          );
+        }
+        item.quantity = validated.quantity;
+      }
+
+      // Update other fields
+      if (validated.name) item.name = validated.name;
+      if (validated.unit) item.unit = validated.unit;
+      if (validated.location) item.location = validated.location;
+      if (validated.pricePerUnit !== undefined) item.pricePerUnit = validated.pricePerUnit;
+      if (validated.minStock !== undefined) item.minStock = validated.minStock;
+      if (validated.isActive !== undefined) item.isActive = validated.isActive;
+
+      await item.save({ session });
+      await session.commitTransaction();
+      session.endSession();
+
+      logger.info(`Inventory item updated: ${item.name}`);
+      return item;
+    } catch (error) {
+      await session.abortTransaction();
+      session.endSession();
+      throw error;
+    }
   }
 
   async addStock(id: string, input: AddStockInput, userId: string) {
@@ -158,8 +199,68 @@ export class InventoryService {
       return {
         ...item.toObject(),
         id: item._id.toString(),
-        totalPrice: item.quantity * item.pricePerUnit,
       };
+    } catch (error) {
+      await session.abortTransaction();
+      session.endSession();
+      throw error;
+    }
+  }
+
+  async updateUsageLog(itemId: string, logId: string, input: any) {
+    const session = await mongoose.startSession();
+    session.startTransaction();
+
+    try {
+      const item = await InventoryItem.findById(itemId).session(session);
+      if (!item) throw new NotFoundError("Inventory item");
+
+      const log = await InventoryUsageLog.findById(logId).session(session);
+      if (!log) throw new NotFoundError("Usage log");
+
+      if (input.quantityUsed !== undefined) {
+        const diff = input.quantityUsed - log.quantityUsed;
+        if (item.quantity - diff < 0) {
+          throw new AppError(`Insufficient stock to adjust usage. Current: ${item.quantity}`);
+        }
+        item.quantity -= diff;
+        log.quantityUsed = input.quantityUsed;
+        await item.save({ session });
+      }
+
+      if (input.note) log.note = input.note;
+
+      await log.save({ session });
+      await session.commitTransaction();
+      session.endSession();
+
+      return log;
+    } catch (error) {
+      await session.abortTransaction();
+      session.endSession();
+      throw error;
+    }
+  }
+
+  async deleteUsageLog(itemId: string, logId: string) {
+    const session = await mongoose.startSession();
+    session.startTransaction();
+
+    try {
+      const item = await InventoryItem.findById(itemId).session(session);
+      if (!item) throw new NotFoundError("Inventory item");
+
+      const log = await InventoryUsageLog.findById(logId).session(session);
+      if (!log) throw new NotFoundError("Usage log");
+
+      item.quantity += log.quantityUsed;
+      await item.save({ session });
+      await InventoryUsageLog.findByIdAndDelete(logId).session(session);
+
+      await session.commitTransaction();
+      session.endSession();
+
+      return { message: "Usage log deleted and stock restored" };
     } catch (error) {
       await session.abortTransaction();
       session.endSession();
