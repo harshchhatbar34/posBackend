@@ -15,7 +15,8 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const startDate = searchParams.get("startDate") || undefined;
     const endDate = searchParams.get("endDate") || undefined;
-    const result = await reportsService.getSalesReport(startDate, endDate);
+    const sectionId = searchParams.get("sectionId") || undefined;
+    const result = await reportsService.getSalesReport(startDate, endDate, sectionId);
     return successResponse(result);
   } catch (error) {
     return handleError(error);

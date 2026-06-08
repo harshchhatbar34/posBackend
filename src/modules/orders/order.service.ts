@@ -22,7 +22,7 @@ import { paginationMeta } from "@/utils/api-response";
 import { logger } from "@/utils/logger";
 
 export class OrderService {
-  async findAll(params: PaginationParams & { status?: string; tableId?: string; paymentStatus?: string; startDate?: string; endDate?: string; }) {
+  async findAll(params: PaginationParams & { status?: string; tableId?: string; paymentStatus?: string; startDate?: string; endDate?: string; dateFrom?: string; dateTo?: string; customerName?: string; }) {
     const { page, pageSize, sortBy, sortOrder } = paginationSchema.parse(params);
     const skip = (page - 1) * pageSize;
 
@@ -30,10 +30,18 @@ export class OrderService {
     if (params.status) where.status = params.status;
     if (params.tableId) where.tableId = new mongoose.Types.ObjectId(params.tableId);
     if (params.paymentStatus) where.paymentStatus = params.paymentStatus;
-    if (params.startDate || params.endDate) {
+
+    if (params.customerName) {
+      where.customerName = { $regex: params.customerName, $options: "i" };
+    }
+
+    const fromDate = params.dateFrom || params.startDate;
+    const toDate = params.dateTo || params.endDate;
+
+    if (fromDate || toDate) {
       where.createdAt = {};
-      if (params.startDate) where.createdAt.$gte = new Date(params.startDate);
-      if (params.endDate) where.createdAt.$lte = new Date(params.endDate);
+      if (fromDate) where.createdAt.$gte = new Date(fromDate);
+      if (toDate) where.createdAt.$lte = new Date(toDate);
     }
 
     const sortOpt: any = { [sortBy || "createdAt"]: sortOrder === "desc" ? -1 : 1 };
@@ -202,7 +210,11 @@ export class OrderService {
     }
 
     const updateData: any = { status: validated.status };
-    if (validated.status === "SERVED") updateData.servedById = userId;
+    if (validated.status === "SERVED") {
+      updateData.servedById = userId;
+      updateData.servedAt = new Date();
+    }
+    if (validated.status === "COMPLETED") updateData.cookedAt = new Date();
 
     const session = await mongoose.startSession();
     session.startTransaction();
@@ -274,7 +286,7 @@ export class OrderService {
         const allItems = await OrderItem.find({ orderId: item.orderId }).session(session);
         const allCooked = allItems.every((i) => i.id === itemId || i.status === "COOKED");
         if (allCooked) {
-          await Order.findByIdAndUpdate(item.orderId, { status: OrderStatus.COMPLETED }, { session });
+          await Order.findByIdAndUpdate(item.orderId, { status: OrderStatus.COMPLETED, cookedAt: new Date() }, { session });
         }
       }
 

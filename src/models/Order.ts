@@ -29,6 +29,8 @@ export interface IOrder extends Document {
   paymentMethod?: PaymentMethod;
   paymentStatus: PaymentStatus;
   paidAt?: Date;
+  cookedAt?: Date;
+  servedAt?: Date;
   notes?: string;
   customerName?: string;
   customerNumber?: string;
@@ -48,6 +50,8 @@ const OrderSchema: Schema = new Schema(
     paymentMethod: { type: String, enum: Object.values(PaymentMethod) },
     paymentStatus: { type: String, enum: Object.values(PaymentStatus), default: PaymentStatus.UNPAID },
     paidAt: { type: Date },
+    cookedAt: { type: Date },
+    servedAt: { type: Date },
     notes: { type: String },
     customerName: { type: String },
     customerNumber: { type: String },

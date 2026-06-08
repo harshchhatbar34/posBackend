@@ -1,3 +1,6 @@
+import dotenv from "dotenv";
+dotenv.config();
+
 import { createServer } from "http";
 import next from "next";
 import connectToDatabase from "./lib/mongoose";

@@ -20,6 +20,9 @@ export async function GET(request: NextRequest) {
       paymentStatus: searchParams.get("paymentStatus") || undefined,
       startDate: searchParams.get("startDate") || undefined,
       endDate: searchParams.get("endDate") || undefined,
+      dateFrom: searchParams.get("dateFrom") || undefined,
+      dateTo: searchParams.get("dateTo") || undefined,
+      customerName: searchParams.get("customerName") || undefined,
       sortBy: searchParams.get("sortBy") || undefined,
       sortOrder: searchParams.get("sortOrder") || undefined,
     };

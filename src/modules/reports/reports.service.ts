@@ -3,9 +3,10 @@ import Order, { PaymentStatus } from "@/models/Order";
 import OrderItem from "@/models/OrderItem";
 import InventoryItem from "@/models/InventoryItem";
 import InventoryUsageLog from "@/models/InventoryUsageLog";
+import Table from "@/models/Table";
 
 export class ReportsService {
-  async getSalesReport(startDate?: string, endDate?: string) {
+  async getSalesReport(startDate?: string, endDate?: string, sectionId?: string) {
     const dateFilter: any = {};
     if (startDate) dateFilter.$gte = new Date(startDate);
     if (endDate) dateFilter.$lte = new Date(endDate);
@@ -13,6 +14,13 @@ export class ReportsService {
     const matchObj: any = { paymentStatus: PaymentStatus.PAID };
     if (Object.keys(dateFilter).length > 0) {
       matchObj.paidAt = dateFilter;
+    }
+
+    let tableIds: mongoose.Types.ObjectId[] = [];
+    if (sectionId) {
+      const tables = await Table.find({ sectionId: new mongoose.Types.ObjectId(sectionId) }).select("_id").lean();
+      tableIds = tables.map((t) => t._id as mongoose.Types.ObjectId);
+      matchObj.tableId = { $in: tableIds };
     }
 
     const [totalSalesAgg, orderCount, paymentBreakdownAgg, topProducts, sectionWiseSales] =
@@ -28,7 +36,13 @@ export class ReportsService {
             $lookup: { from: "orders", localField: "orderId", foreignField: "_id", as: "order" }
           },
           { $unwind: "$order" },
-          { $match: { "order.paymentStatus": PaymentStatus.PAID, ...(Object.keys(dateFilter).length > 0 ? { "order.paidAt": dateFilter } : {}) } },
+          {
+            $match: {
+              "order.paymentStatus": PaymentStatus.PAID,
+              ...(Object.keys(dateFilter).length > 0 ? { "order.paidAt": dateFilter } : {}),
+              ...(sectionId ? { "order.tableId": { $in: tableIds } } : {}),
+            },
+          },
           {
             $lookup: { from: "products", localField: "productId", foreignField: "_id", as: "product" }
           },
