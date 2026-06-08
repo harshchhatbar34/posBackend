@@ -12,7 +12,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     await connectToDatabase();
 
     const user = await authenticate(request);
-    authorize("SUPER_ADMIN", "ADMIN")(user.role);
+    authorize("SUPER_ADMIN", "ADMIN", "MANAGER")(user.role);
     const { id } = await params;
     const result = await inventoryService.findById(id);
     return successResponse(result);
@@ -34,7 +34,7 @@ async function handleInventoryUpdate(request: NextRequest, params: RouteParams["
     await connectToDatabase();
 
     const user = await authenticate(request);
-    authorize("SUPER_ADMIN", "ADMIN")(user.role);
+    authorize("SUPER_ADMIN", "ADMIN", "MANAGER")(user.role);
     const { id } = await params;
     const body = await request.json();
     const result = await inventoryService.update(id, body);

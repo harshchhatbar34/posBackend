@@ -32,7 +32,7 @@ export async function POST(request: NextRequest) {
     await connectToDatabase();
 
     const user = await authenticate(request);
-    authorize("SUPER_ADMIN", "ADMIN")(user.role);
+    authorize("SUPER_ADMIN", "ADMIN", "MANAGER")(user.role);
     const body = await request.json();
     const result = await sectionService.create(body);
     return successResponse(result, "Section created successfully", 201);

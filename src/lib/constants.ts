@@ -18,6 +18,7 @@ export const MAX_PAGE_SIZE = 100;
 export const ROLES = {
   SUPER_ADMIN: "SUPER_ADMIN",
   ADMIN: "ADMIN",
+  MANAGER: "MANAGER",
   CHEF: "CHEF",
   HELPER: "HELPER",
 } as const;

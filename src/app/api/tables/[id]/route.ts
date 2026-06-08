@@ -33,7 +33,7 @@ async function handleTableUpdate(request: NextRequest, params: RouteParams["para
     await connectToDatabase();
 
     const user = await authenticate(request);
-    authorize("SUPER_ADMIN", "ADMIN")(user.role);
+    authorize("SUPER_ADMIN", "ADMIN", "MANAGER")(user.role);
     const { id } = await params;
     const body = await request.json();
     const result = await tableService.update(id, body);
@@ -48,7 +48,7 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
     await connectToDatabase();
 
     const user = await authenticate(request);
-    authorize("SUPER_ADMIN", "ADMIN")(user.role);
+    authorize("SUPER_ADMIN", "ADMIN", "MANAGER")(user.role);
     const { id } = await params;
     const result = await tableService.delete(id);
     return successResponse(result);

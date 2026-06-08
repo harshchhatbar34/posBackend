@@ -13,7 +13,7 @@ export async function GET(request: NextRequest, { params }: RouteParams) {
     await connectToDatabase();
 
     const user = await authenticate(request);
-    authorize("SUPER_ADMIN", "ADMIN")(user.role);
+    authorize("SUPER_ADMIN", "ADMIN", "MANAGER")(user.role);
 
     const { id } = await params;
     // Verify authority to see this user
@@ -40,7 +40,7 @@ async function handleUserUpdate(request: NextRequest, params: RouteParams["param
     await connectToDatabase();
 
     const user = await authenticate(request);
-    authorize("SUPER_ADMIN", "ADMIN")(user.role);
+    authorize("SUPER_ADMIN", "ADMIN", "MANAGER")(user.role);
 
     const { id } = await params;
     const body = await request.json();
@@ -67,7 +67,7 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
     await connectToDatabase();
 
     const user = await authenticate(request);
-    authorize("SUPER_ADMIN", "ADMIN")(user.role);
+    authorize("SUPER_ADMIN", "ADMIN", "MANAGER")(user.role);
 
     const { id } = await params;
     const result = await userService.delete(id, user.role);

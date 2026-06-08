@@ -11,7 +11,7 @@ export async function GET(request: NextRequest) {
     await connectToDatabase();
 
     const user = await authenticate(request);
-    authorize("SUPER_ADMIN", "ADMIN")(user.role);
+    authorize("SUPER_ADMIN", "ADMIN", "MANAGER")(user.role);
     const { searchParams } = new URL(request.url);
     const startDate = searchParams.get("startDate") || undefined;
     const endDate = searchParams.get("endDate") || undefined;

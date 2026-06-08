@@ -11,7 +11,7 @@ export async function GET(request: NextRequest) {
     await connectToDatabase();
 
     const user = await authenticate(request);
-    authorize("SUPER_ADMIN", "ADMIN")(user.role);
+    authorize("SUPER_ADMIN", "ADMIN", "MANAGER")(user.role);
     const { searchParams } = new URL(request.url);
     const params = {
       page: searchParams.get("page") || undefined,
@@ -34,7 +34,7 @@ export async function POST(request: NextRequest) {
     await connectToDatabase();
 
     const user = await authenticate(request);
-    authorize("SUPER_ADMIN", "ADMIN")(user.role);
+    authorize("SUPER_ADMIN", "ADMIN", "MANAGER")(user.role);
     const body = await request.json();
     const result = await inventoryService.create(body);
     return successResponse(result, "Inventory item created successfully", 201);

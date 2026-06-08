@@ -22,7 +22,7 @@ async function handleItemStatusUpdate(request: NextRequest, params: Promise<{ id
     await connectToDatabase();
 
     const user = await authenticate(request);
-    authorize("SUPER_ADMIN", "ADMIN", "CHEF")(user.role);
+    authorize("SUPER_ADMIN", "ADMIN", "MANAGER", "CHEF")(user.role);
     const { id } = await params;
     const body = await request.json();
     const result = await orderService.updateItemStatus(id, body, user.id);

@@ -36,7 +36,7 @@ async function handleSectionUpdate(request: NextRequest, params: RouteParams["pa
     await connectToDatabase();
 
     const user = await authenticate(request);
-    authorize("SUPER_ADMIN", "ADMIN")(user.role);
+    authorize("SUPER_ADMIN", "ADMIN", "MANAGER")(user.role);
     const { id } = await params;
     const body = await request.json();
     const result = await sectionService.update(id, body);
@@ -52,7 +52,7 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
     await connectToDatabase();
 
     const user = await authenticate(request);
-    authorize("SUPER_ADMIN", "ADMIN")(user.role);
+    authorize("SUPER_ADMIN", "ADMIN", "MANAGER")(user.role);
     const { id } = await params;
     const result = await sectionService.delete(id);
     return successResponse(result);

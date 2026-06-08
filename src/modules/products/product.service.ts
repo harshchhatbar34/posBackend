@@ -2,6 +2,7 @@ import mongoose from "mongoose";
 import Product from "@/models/Product";
 import Category from "@/models/Category";
 import Section from "@/models/Section";
+import ProductLog from "@/models/ProductLog";
 import {
   createProductSchema,
   updateProductSchema,
@@ -94,25 +95,67 @@ export class ProductService {
     };
   }
 
-  async create(input: CreateProductInput) {
+  async create(input: CreateProductInput, userId: string) {
     const validated = createProductSchema.parse(input);
     const product = await Product.create(validated);
     logger.info(`Product created: ${product.name}`);
+
+    // Log creation
+    await ProductLog.create({
+      productId: product._id,
+      action: "PRODUCT_CREATED",
+      details: `Product "${product.name}" created with price ₹${product.price}`,
+      userId,
+    });
+
     return this.findById(product._id.toString());
   }
 
-  async update(id: string, input: UpdateProductInput) {
+  async update(id: string, input: UpdateProductInput, userId: string) {
     const validated = updateProductSchema.parse(input);
+    const original = await Product.findById(id).lean();
+    if (!original) throw new NotFoundError("Product");
+
     const product = await Product.findByIdAndUpdate(id, validated, { new: true });
     if (!product) throw new NotFoundError("Product");
     logger.info(`Product updated: ${product.name}`);
+
+    // Detect changes to log details
+    const changes: string[] = [];
+    if (original.name !== product.name) changes.push(`name: "${original.name}" -> "${product.name}"`);
+    if (original.price !== product.price) changes.push(`price: ₹${original.price} -> ₹${product.price}`);
+    if (original.categoryId?.toString() !== product.categoryId?.toString()) changes.push(`categoryId updated`);
+    if (original.sectionId?.toString() !== product.sectionId?.toString()) changes.push(`sectionId updated`);
+    if (original.isAvailable !== product.isAvailable) changes.push(`isAvailable: ${original.isAvailable} -> ${product.isAvailable}`);
+
+    const details = changes.length > 0
+      ? `Updated fields: ${changes.join(", ")}`
+      : "Product updated with no changes in visible fields";
+
+    // Log update
+    await ProductLog.create({
+      productId: product._id,
+      action: "PRODUCT_UPDATED",
+      details,
+      userId,
+    });
+
     return this.findById(id);
   }
 
-  async delete(id: string) {
-    const product = await Product.findByIdAndUpdate(id, { isAvailable: false });
+  async delete(id: string, userId: string) {
+    const product = await Product.findByIdAndUpdate(id, { isAvailable: false }, { new: true });
     if (!product) throw new NotFoundError("Product");
     logger.info(`Product deactivated: ${id}`);
+
+    // Log deactivation
+    await ProductLog.create({
+      productId: product._id,
+      action: "PRODUCT_DEACTIVATED",
+      details: `Product "${product.name}" deactivated (soft-deleted)`,
+      userId,
+    });
+
     return { message: "Product deactivated successfully" };
   }
 }

@@ -11,7 +11,7 @@ export async function GET(request: NextRequest) {
     await connectToDatabase();
 
     const user = await authenticate(request);
-    authorize("SUPER_ADMIN", "ADMIN")(user.role);
+    authorize("SUPER_ADMIN", "ADMIN", "MANAGER")(user.role);
     const result = await reportsService.getInventoryReport();
     return successResponse(result);
   } catch (error) {

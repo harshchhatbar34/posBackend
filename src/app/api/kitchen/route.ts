@@ -11,7 +11,7 @@ export async function GET(request: NextRequest) {
     await connectToDatabase();
 
     const user = await authenticate(request);
-    authorize("SUPER_ADMIN", "ADMIN", "CHEF")(user.role);
+    authorize("SUPER_ADMIN", "ADMIN", "MANAGER", "CHEF")(user.role);
 
     const { searchParams } = new URL(request.url);
     const sectionId = searchParams.get("sectionId") || undefined;

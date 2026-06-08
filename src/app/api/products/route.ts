@@ -36,9 +36,9 @@ export async function POST(request: NextRequest) {
     await connectToDatabase();
 
     const user = await authenticate(request);
-    authorize("SUPER_ADMIN", "ADMIN")(user.role);
+    authorize("SUPER_ADMIN", "ADMIN", "MANAGER")(user.role);
     const body = await request.json();
-    const result = await productService.create(body);
+    const result = await productService.create(body, user.id);
     return successResponse(result, "Product created successfully", 201);
   } catch (error) {
     return handleError(error);

@@ -471,8 +471,8 @@ export class OrderService {
     if (!order) throw new NotFoundError("Order");
     
     const isAdmin = userRole === "SUPER_ADMIN" || userRole === "ADMIN";
-    if (order.paymentStatus === "PAID" && !isAdmin) {
-      throw new AppError("Cannot delete a paid order");
+    if (!isAdmin) {
+      throw new AppError("Only Admins can delete orders");
     }
 
     const session = await mongoose.startSession();

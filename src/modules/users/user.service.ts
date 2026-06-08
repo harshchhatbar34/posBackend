@@ -24,6 +24,8 @@ export class UserService {
     if (requesterRole === "SUPER_ADMIN") {
       roleQuery = { role: Role.ADMIN };
     } else if (requesterRole === "ADMIN") {
+      roleQuery = { role: { $in: [Role.MANAGER, Role.HELPER, Role.CHEF] } };
+    } else if (requesterRole === "MANAGER") {
       roleQuery = { role: { $in: [Role.HELPER, Role.CHEF] } };
     } else {
       roleQuery = { _id: null };
@@ -78,8 +80,8 @@ export class UserService {
         throw new AppError("Super Admins can only manage Admin accounts.");
       }
     } else if (requesterRole === "ADMIN") {
-      if (![Role.HELPER, Role.CHEF].includes(target.role as any)) {
-        throw new AppError("Admins can only manage Helper and Chef accounts.");
+      if (![Role.MANAGER, Role.HELPER, Role.CHEF].includes(target.role as any)) {
+        throw new AppError("Admins can only manage Manager, Helper, and Chef accounts.");
       }
     } else {
       throw new UnauthorizedError("You are not authorized to manage user accounts.");
@@ -95,8 +97,8 @@ export class UserService {
         throw new AppError("Super Admins can only create Admin accounts.");
       }
     } else if (requesterRole === "ADMIN") {
-      if (![Role.HELPER, Role.CHEF].includes(validated.role as any)) {
-        throw new AppError("Admins can only create Helper and Chef accounts.");
+      if (![Role.MANAGER, Role.HELPER, Role.CHEF].includes(validated.role as any)) {
+        throw new AppError("Admins can only create Manager, Helper, and Chef accounts.");
       }
     } else {
       throw new UnauthorizedError("You are not authorized to create user accounts.");

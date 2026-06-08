@@ -98,15 +98,11 @@ export class SectionService {
   }
 
   async delete(id: string) {
-    const section = await Section.findByIdAndDelete(id);
+    const section = await Section.findByIdAndUpdate(id, { isActive: false });
     if (!section) throw new NotFoundError("Section");
 
-    // Cascading delete associated tables and products
-    await Table.deleteMany({ sectionId: id });
-    await Product.deleteMany({ sectionId: id });
-
-    logger.info(`Section deleted permanently: ${id}`);
-    return { message: "Section deleted permanently" };
+    logger.info(`Section deactivated: ${id}`);
+    return { message: "Section deactivated successfully" };
   }
 }
 

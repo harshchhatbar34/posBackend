@@ -33,10 +33,10 @@ async function handleProductUpdate(request: NextRequest, params: RouteParams["pa
     await connectToDatabase();
 
     const user = await authenticate(request);
-    authorize("SUPER_ADMIN", "ADMIN")(user.role);
+    authorize("SUPER_ADMIN", "ADMIN", "MANAGER")(user.role);
     const { id } = await params;
     const body = await request.json();
-    const result = await productService.update(id, body);
+    const result = await productService.update(id, body, user.id);
     return successResponse(result, "Product updated successfully");
   } catch (error) {
     return handleError(error);
@@ -50,7 +50,7 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
     const user = await authenticate(request);
     authorize("SUPER_ADMIN", "ADMIN")(user.role);
     const { id } = await params;
-    const result = await productService.delete(id);
+    const result = await productService.delete(id, user.id);
     return successResponse(result);
   } catch (error) {
     return handleError(error);

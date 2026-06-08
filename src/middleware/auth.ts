@@ -80,8 +80,9 @@ export function authorize(...allowedRoles: string[]) {
 
 // Role hierarchy helper
 const roleHierarchy: Record<Role, number> = {
-  SUPER_ADMIN: 4,
-  ADMIN: 3,
+  SUPER_ADMIN: 5,
+  ADMIN: 4,
+  MANAGER: 3,
   CHEF: 2,
   HELPER: 1,
 };
