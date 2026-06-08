@@ -18,7 +18,7 @@ export async function GET(request: NextRequest) {
 
     const [orders, stats] = await Promise.all([
       kitchenService.getKitchenOrders(sectionId),
-      kitchenService.getKitchenStats(),
+      kitchenService.getKitchenStats(sectionId),
     ]);
 
     return successResponse({ orders, stats });

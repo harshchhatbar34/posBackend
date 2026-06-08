@@ -1,6 +1,8 @@
 import mongoose from "mongoose";
 import Order, { OrderStatus } from "@/models/Order";
 import OrderItem, { OrderItemStatus } from "@/models/OrderItem";
+import Table from "@/models/Table";
+import { AppError } from "@/utils/errors";
 import { logger } from "@/utils/logger";
 
 // ============ Kitchen Service ============
@@ -178,18 +180,26 @@ export class KitchenService {
   }
 
   // Get kitchen stats
-  async getKitchenStats() {
+  async getKitchenStats(sectionId?: string) {
     const startOfToday = new Date();
     startOfToday.setHours(0, 0, 0, 0);
 
+    const query: any = {};
+    if (sectionId) {
+      const tables = await Table.find({ sectionId: new mongoose.Types.ObjectId(sectionId) }).select("_id").lean();
+      query.tableId = { $in: tables.map((t: any) => t._id) };
+    }
+
     const [pending, inProgress, completed, todayOrders] = await Promise.all([
-      Order.countDocuments({ status: OrderStatus.PENDING }),
-      Order.countDocuments({ status: OrderStatus.IN_PROGRESS }),
+      Order.countDocuments({ ...query, status: OrderStatus.PENDING }),
+      Order.countDocuments({ ...query, status: OrderStatus.IN_PROGRESS }),
       Order.countDocuments({
+        ...query,
         status: OrderStatus.COMPLETED,
         updatedAt: { $gte: startOfToday },
       }),
       Order.countDocuments({
+        ...query,
         createdAt: { $gte: startOfToday },
       }),
     ]);
