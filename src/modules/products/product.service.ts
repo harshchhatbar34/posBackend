@@ -18,7 +18,10 @@ export class ProductService {
     params: PaginationParams & {
       sectionId?: string;
       categoryId?: string;
+      section?: string;
+      category?: string;
       isAvailable?: string;
+      name?: string;
     }
   ) {
     const { page, pageSize, search, sortBy, sortOrder } = paginationSchema.parse(params);
@@ -27,10 +30,31 @@ export class ProductService {
     const where: any = {};
     if (params.sectionId) where.sectionId = new mongoose.Types.ObjectId(params.sectionId);
     if (params.categoryId) where.categoryId = new mongoose.Types.ObjectId(params.categoryId);
+
+    if (params.category) {
+      const cat = await Category.findOne({ name: { $regex: params.category, $options: "i" } }).select("_id").lean();
+      if (cat) {
+        where.categoryId = cat._id;
+      } else {
+        where.categoryId = new mongoose.Types.ObjectId(); // Ensure query returns no results if name mismatch
+      }
+    }
+
+    if (params.section) {
+      const sec = await Section.findOne({ name: { $regex: params.section, $options: "i" } }).select("_id").lean();
+      if (sec) {
+        where.sectionId = sec._id;
+      } else {
+        where.sectionId = new mongoose.Types.ObjectId(); // Ensure query returns no results if name mismatch
+      }
+    }
+
     if (params.isAvailable !== undefined)
       where.isAvailable = params.isAvailable === "true";
-    if (search) {
-      where.name = { $regex: search, $options: "i" };
+    
+    const nameQuery = params.name || search;
+    if (nameQuery) {
+      where.name = { $regex: nameQuery, $options: "i" };
     }
 
     const sortOpt: any = { [sortBy || "name"]: sortOrder === "desc" ? -1 : 1 };
