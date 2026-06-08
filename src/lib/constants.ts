@@ -27,7 +27,7 @@ export const ROLES = {
 export const ORDER_STATUSES = {
   PENDING: "PENDING",
   IN_PROGRESS: "IN_PROGRESS",
-  COMPLETED: "COMPLETED",
+  COOKED: "COOKED",
   SERVED: "SERVED",
   CANCELLED: "CANCELLED",
 } as const;

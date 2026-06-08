@@ -11,7 +11,7 @@ export class KitchenService {
   // Get all active kitchen orders (sorted by creation time ASC)
   async getKitchenOrders(sectionId?: string) {
     const match: any = {
-      status: { $in: [OrderStatus.PENDING, OrderStatus.IN_PROGRESS, OrderStatus.COMPLETED] },
+      status: { $in: [OrderStatus.PENDING, OrderStatus.IN_PROGRESS, OrderStatus.COOKED] },
     };
 
     const pipeline: any[] = [
@@ -190,12 +190,12 @@ export class KitchenService {
       query.tableId = { $in: tables.map((t: any) => t._id) };
     }
 
-    const [pending, inProgress, completed, todayOrders] = await Promise.all([
+    const [pending, inProgress, COOKED, todayOrders] = await Promise.all([
       Order.countDocuments({ ...query, status: OrderStatus.PENDING }),
       Order.countDocuments({ ...query, status: OrderStatus.IN_PROGRESS }),
       Order.countDocuments({
         ...query,
-        status: OrderStatus.COMPLETED,
+        status: OrderStatus.COOKED,
         updatedAt: { $gte: startOfToday },
       }),
       Order.countDocuments({
@@ -204,7 +204,7 @@ export class KitchenService {
       }),
     ]);
 
-    return { pending, inProgress, completed, todayOrders };
+    return { pending, inProgress, COOKED, todayOrders };
   }
 }
 

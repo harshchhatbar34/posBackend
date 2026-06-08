@@ -198,9 +198,9 @@ export class OrderService {
     if (!order) throw new NotFoundError("Order");
 
     const validTransitions: Record<string, string[]> = {
-      PENDING: ["IN_PROGRESS", "COMPLETED", "SERVED", "CANCELLED"],
-      IN_PROGRESS: ["COMPLETED", "SERVED", "CANCELLED"],
-      COMPLETED: ["SERVED"],
+      PENDING: ["IN_PROGRESS", "COOKED", "SERVED", "CANCELLED"],
+      IN_PROGRESS: ["COOKED", "SERVED", "CANCELLED"],
+      COOKED: ["SERVED"],
       SERVED: [],
       CANCELLED: [],
     };
@@ -214,7 +214,7 @@ export class OrderService {
       updateData.servedById = userId;
       updateData.servedAt = new Date();
     }
-    if (validated.status === "COMPLETED") updateData.cookedAt = new Date();
+    if (validated.status === "COOKED") updateData.cookedAt = new Date();
 
     const session = await mongoose.startSession();
     session.startTransaction();
@@ -224,7 +224,7 @@ export class OrderService {
         const otherOrders = await Order.countDocuments({
           tableId: order.tableId,
           _id: { $ne: orderId },
-          status: { $in: [OrderStatus.PENDING, OrderStatus.IN_PROGRESS, OrderStatus.COMPLETED] },
+          status: { $in: [OrderStatus.PENDING, OrderStatus.IN_PROGRESS, OrderStatus.COOKED] },
         }).session(session);
 
         if (otherOrders === 0) {
@@ -232,7 +232,7 @@ export class OrderService {
         }
       }
 
-      if (validated.status === "COMPLETED" || validated.status === "SERVED") {
+      if (validated.status === "COOKED" || validated.status === "SERVED") {
         await OrderItem.updateMany(
           { orderId, status: { $ne: "COOKED" } },
           { status: "COOKED" },
@@ -294,7 +294,7 @@ export class OrderService {
         const allItems = await OrderItem.find({ orderId: item.orderId }).session(session);
         const allCooked = allItems.every((i) => i.id === itemId || i.status === "COOKED");
         if (allCooked) {
-          await Order.findByIdAndUpdate(item.orderId, { status: OrderStatus.COMPLETED, cookedAt: new Date() }, { session });
+          await Order.findByIdAndUpdate(item.orderId, { status: OrderStatus.COOKED, cookedAt: new Date() }, { session });
         }
       }
 
@@ -516,7 +516,7 @@ export class OrderService {
       const otherOrders = await Order.countDocuments({
         tableId: order.tableId,
         _id: { $ne: orderId },
-        status: { $in: [OrderStatus.PENDING, OrderStatus.IN_PROGRESS, OrderStatus.COMPLETED] },
+        status: { $in: [OrderStatus.PENDING, OrderStatus.IN_PROGRESS, OrderStatus.COOKED] },
       }).session(session);
 
       if (otherOrders === 0) {

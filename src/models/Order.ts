@@ -3,7 +3,7 @@ import mongoose, { Schema, Document } from 'mongoose';
 export enum OrderStatus {
   PENDING = 'PENDING',
   IN_PROGRESS = 'IN_PROGRESS',
-  COMPLETED = 'COMPLETED',
+  COOKED = 'COOKED',
   SERVED = 'SERVED',
   CANCELLED = 'CANCELLED',
 }
