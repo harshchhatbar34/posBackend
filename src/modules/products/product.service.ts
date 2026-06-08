@@ -1,5 +1,5 @@
 import mongoose from "mongoose";
-import Product from "@/models/Product";
+import Product, { ProductAvailability } from "@/models/Product";
 import Category from "@/models/Category";
 import Section from "@/models/Section";
 import ProductLog from "@/models/ProductLog";
@@ -13,6 +13,39 @@ import { paginationSchema, type PaginationParams } from "@/validators/common";
 import { NotFoundError } from "@/utils/errors";
 import { paginationMeta } from "@/utils/api-response";
 import { logger } from "@/utils/logger";
+
+// ─────────────────────────────────────────────
+// Helpers: convert between boolean (frontend) ↔ enum (DB)
+// ─────────────────────────────────────────────
+
+/** Frontend sends true/false → store as ACTIVE/INACTIVE */
+function toAvailabilityEnum(isAvailable: boolean): ProductAvailability {
+  return isAvailable ? ProductAvailability.ACTIVE : ProductAvailability.INACTIVE;
+}
+
+/** DB stores ACTIVE/INACTIVE → frontend receives true/false */
+function toIsAvailableBoolean(availability: ProductAvailability): boolean {
+  return availability === ProductAvailability.ACTIVE;
+}
+
+/** Shape every product document for the API response */
+function formatProduct(p: any) {
+  return {
+    ...p,
+    id: p._id.toString(),
+    // Convert enum back to boolean so frontend requires zero changes
+    isAvailable: toIsAvailableBoolean(p.availability),
+    availability: p.availability, // also expose raw enum if needed
+    category: p.categoryId
+      ? { ...(p.categoryId as any), id: (p.categoryId as any)._id.toString() }
+      : null,
+    section: p.sectionId
+      ? { ...(p.sectionId as any), id: (p.sectionId as any)._id.toString() }
+      : null,
+  };
+}
+
+// ─────────────────────────────────────────────
 
 export class ProductService {
   async findAll(
@@ -28,31 +61,30 @@ export class ProductService {
     const { page, pageSize, search, sortBy, sortOrder } = paginationSchema.parse(params);
     const skip = (page - 1) * pageSize;
 
-    const where: any = {};
+    // Always exclude DELETED products from every list query
+    const where: any = { availability: { $ne: ProductAvailability.DELETED } };
+
     if (params.sectionId) where.sectionId = new mongoose.Types.ObjectId(params.sectionId);
     if (params.categoryId) where.categoryId = new mongoose.Types.ObjectId(params.categoryId);
 
     if (params.category) {
       const cat = await Category.findOne({ name: { $regex: params.category, $options: "i" } }).select("_id").lean();
-      if (cat) {
-        where.categoryId = cat._id;
-      } else {
-        where.categoryId = new mongoose.Types.ObjectId(); // Ensure query returns no results if name mismatch
-      }
+      where.categoryId = cat ? cat._id : new mongoose.Types.ObjectId();
     }
 
     if (params.section) {
       const sec = await Section.findOne({ name: { $regex: params.section, $options: "i" } }).select("_id").lean();
-      if (sec) {
-        where.sectionId = sec._id;
-      } else {
-        where.sectionId = new mongoose.Types.ObjectId(); // Ensure query returns no results if name mismatch
-      }
+      where.sectionId = sec ? sec._id : new mongoose.Types.ObjectId();
     }
 
-    if (params.isAvailable !== undefined)
-      where.isAvailable = params.isAvailable === "true";
-    
+    // isAvailable filter: "true" → ACTIVE only, "false" → INACTIVE only
+    if (params.isAvailable !== undefined) {
+      where.availability =
+        params.isAvailable === "true"
+          ? ProductAvailability.ACTIVE
+          : ProductAvailability.INACTIVE;
+    }
+
     const nameQuery = params.name || search;
     if (nameQuery) {
       where.name = { $regex: nameQuery, $options: "i" };
@@ -71,36 +103,40 @@ export class ProductService {
       Product.countDocuments(where),
     ]);
 
-    const enrichedProducts = products.map(p => ({
-      ...p,
-      id: p._id.toString(),
-      category: p.categoryId ? { ...(p.categoryId as any), id: (p.categoryId as any)._id.toString() } : null,
-      section: p.sectionId ? { ...(p.sectionId as any), id: (p.sectionId as any)._id.toString() } : null,
-    }));
-
-    return { products: enrichedProducts, meta: paginationMeta(page, pageSize, total) };
+    return {
+      products: products.map(formatProduct),
+      meta: paginationMeta(page, pageSize, total),
+    };
   }
 
   async findById(id: string) {
-    const product = await Product.findById(id)
+    const product = await Product.findOne({
+      _id: id,
+      availability: { $ne: ProductAvailability.DELETED },
+    })
       .populate("categoryId", "name")
       .populate("sectionId", "name")
       .lean();
+
     if (!product) throw new NotFoundError("Product");
-    return {
-      ...product,
-      id: product._id.toString(),
-      category: product.categoryId ? { ...(product.categoryId as any), id: (product.categoryId as any)._id.toString() } : null,
-      section: product.sectionId ? { ...(product.sectionId as any), id: (product.sectionId as any)._id.toString() } : null,
-    };
+    return formatProduct(product);
   }
 
   async create(input: CreateProductInput, userId: string) {
     const validated = createProductSchema.parse(input);
-    const product = await Product.create(validated);
+
+    const product = await Product.create({
+      name: validated.name,
+      price: validated.price,
+      categoryId: validated.categoryId,
+      sectionId: validated.sectionId,
+      image: validated.image,
+      // Convert frontend boolean → enum
+      availability: toAvailabilityEnum(validated.isAvailable),
+    });
+
     logger.info(`Product created: ${product.name}`);
 
-    // Log creation
     await ProductLog.create({
       productId: product._id,
       action: "PRODUCT_CREATED",
@@ -113,26 +149,43 @@ export class ProductService {
 
   async update(id: string, input: UpdateProductInput, userId: string) {
     const validated = updateProductSchema.parse(input);
-    const original = await Product.findById(id).lean();
+
+    const original = await Product.findOne({
+      _id: id,
+      availability: { $ne: ProductAvailability.DELETED },
+    }).lean();
     if (!original) throw new NotFoundError("Product");
 
-    const product = await Product.findByIdAndUpdate(id, validated, { new: true });
+    // Build DB update: convert isAvailable boolean → enum if provided
+    const dbUpdate: any = { ...validated };
+    if (typeof validated.isAvailable === "boolean") {
+      dbUpdate.availability = toAvailabilityEnum(validated.isAvailable);
+      delete dbUpdate.isAvailable; // remove boolean field; DB uses availability
+    }
+
+    const product = await Product.findByIdAndUpdate(id, dbUpdate, { new: true });
     if (!product) throw new NotFoundError("Product");
+
     logger.info(`Product updated: ${product.name}`);
 
-    // Detect changes to log details
+    // Build change log
     const changes: string[] = [];
-    if (original.name !== product.name) changes.push(`name: "${original.name}" -> "${product.name}"`);
-    if (original.price !== product.price) changes.push(`price: ₹${original.price} -> ₹${product.price}`);
-    if (original.categoryId?.toString() !== product.categoryId?.toString()) changes.push(`categoryId updated`);
-    if (original.sectionId?.toString() !== product.sectionId?.toString()) changes.push(`sectionId updated`);
-    if (original.isAvailable !== product.isAvailable) changes.push(`isAvailable: ${original.isAvailable} -> ${product.isAvailable}`);
+    if (original.name !== product.name)
+      changes.push(`name: "${original.name}" → "${product.name}"`);
+    if (original.price !== product.price)
+      changes.push(`price: ₹${original.price} → ₹${product.price}`);
+    if (original.categoryId?.toString() !== product.categoryId?.toString())
+      changes.push(`category updated`);
+    if (original.sectionId?.toString() !== product.sectionId?.toString())
+      changes.push(`section updated`);
+    if (original.availability !== product.availability)
+      changes.push(`availability: ${original.availability} → ${product.availability}`);
 
-    const details = changes.length > 0
-      ? `Updated fields: ${changes.join(", ")}`
-      : "Product updated with no changes in visible fields";
+    const details =
+      changes.length > 0
+        ? `Updated fields: ${changes.join(", ")}`
+        : "Product updated with no changes in visible fields";
 
-    // Log update
     await ProductLog.create({
       productId: product._id,
       action: "PRODUCT_UPDATED",
@@ -144,20 +197,30 @@ export class ProductService {
   }
 
   async delete(id: string, userId: string) {
-    const product = await Product.findByIdAndUpdate(id, { isAvailable: false }, { new: true });
+    // Find ensuring it is not already deleted
+    const product = await Product.findOne({
+      _id: id,
+      availability: { $ne: ProductAvailability.DELETED },
+    });
     if (!product) throw new NotFoundError("Product");
-    logger.info(`Product deactivated: ${id}`);
 
-    // Log deactivation
+    // Soft-delete: mark as DELETED — never removed from DB
+    product.availability = ProductAvailability.DELETED;
+    await product.save();
+
+    logger.info(`Product soft-deleted (DELETED): ${id}`);
+
     await ProductLog.create({
       productId: product._id,
       action: "PRODUCT_DEACTIVATED",
-      details: `Product "${product.name}" deactivated (soft-deleted)`,
+      details: `Product "${product.name}" permanently soft-deleted (availability → DELETED)`,
       userId,
     });
 
-    return { message: "Product deactivated successfully" };
+    return { message: "Product deleted successfully" };
   }
 }
 
 export const productService = new ProductService();
+
+

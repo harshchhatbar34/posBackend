@@ -1,5 +1,9 @@
 import { z } from "zod";
 
+// Note: validators use boolean isAvailable (what frontend sends).
+// The service layer converts: true → "ACTIVE", false → "INACTIVE".
+// "DELETED" is set only by the delete() method, never via user input.
+
 export const createProductSchema = z.object({
   name: z.string().min(2, "Name must be at least 2 characters").max(100),
   price: z.coerce.number().positive("Price must be positive"),
@@ -20,3 +24,4 @@ export const updateProductSchema = z.object({
 
 export type CreateProductInput = z.infer<typeof createProductSchema>;
 export type UpdateProductInput = z.infer<typeof updateProductSchema>;
+

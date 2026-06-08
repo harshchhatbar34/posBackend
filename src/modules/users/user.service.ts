@@ -83,6 +83,10 @@ export class UserService {
       if (![Role.MANAGER, Role.HELPER, Role.CHEF].includes(target.role as any)) {
         throw new AppError("Admins can only manage Manager, Helper, and Chef accounts.");
       }
+    } else if (requesterRole === "MANAGER") {
+      if (![Role.HELPER, Role.CHEF].includes(target.role as any)) {
+        throw new AppError("Managers can only manage Helper and Chef accounts.");
+      }
     } else {
       throw new UnauthorizedError("You are not authorized to manage user accounts.");
     }
@@ -99,6 +103,10 @@ export class UserService {
     } else if (requesterRole === "ADMIN") {
       if (![Role.MANAGER, Role.HELPER, Role.CHEF].includes(validated.role as any)) {
         throw new AppError("Admins can only create Manager, Helper, and Chef accounts.");
+      }
+    } else if (requesterRole === "MANAGER") {
+      if (![Role.HELPER, Role.CHEF].includes(validated.role as any)) {
+        throw new AppError("Managers can only create Helper and Chef accounts.");
       }
     } else {
       throw new UnauthorizedError("You are not authorized to create user accounts.");
