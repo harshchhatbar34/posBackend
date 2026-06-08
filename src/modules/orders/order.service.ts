@@ -198,8 +198,8 @@ export class OrderService {
     if (!order) throw new NotFoundError("Order");
 
     const validTransitions: Record<string, string[]> = {
-      PENDING: ["IN_PROGRESS", "CANCELLED"],
-      IN_PROGRESS: ["COMPLETED", "CANCELLED"],
+      PENDING: ["IN_PROGRESS", "COMPLETED", "SERVED", "CANCELLED"],
+      IN_PROGRESS: ["COMPLETED", "SERVED", "CANCELLED"],
       COMPLETED: ["SERVED"],
       SERVED: [],
       CANCELLED: [],
@@ -230,6 +230,14 @@ export class OrderService {
         if (otherOrders === 0) {
           await Table.findByIdAndUpdate(order.tableId, { status: TableStatus.AVAILABLE }, { session });
         }
+      }
+
+      if (validated.status === "COMPLETED" || validated.status === "SERVED") {
+        await OrderItem.updateMany(
+          { orderId, status: { $ne: "COOKED" } },
+          { status: "COOKED" },
+          { session }
+        );
       }
 
       await Order.findByIdAndUpdate(orderId, updateData, { session });
@@ -458,10 +466,14 @@ export class OrderService {
     }
   }
 
-  async deleteOrder(orderId: string, userId: string) {
+  async deleteOrder(orderId: string, userId: string, userRole?: string) {
     const order = await Order.findById(orderId);
     if (!order) throw new NotFoundError("Order");
-    if (order.paymentStatus === "PAID") throw new AppError("Cannot delete a paid order");
+    
+    const isAdmin = userRole === "SUPER_ADMIN" || userRole === "ADMIN";
+    if (order.paymentStatus === "PAID" && !isAdmin) {
+      throw new AppError("Cannot delete a paid order");
+    }
 
     const session = await mongoose.startSession();
     session.startTransaction();

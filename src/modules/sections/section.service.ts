@@ -18,7 +18,7 @@ export class SectionService {
     const { page, pageSize, search, sortBy, sortOrder } = paginationSchema.parse(params);
     const skip = (page - 1) * pageSize;
 
-    const where: any = {};
+    const where: any = { isActive: { $ne: false } };
     if (search) {
       where.name = { $regex: search, $options: "i" };
     }
@@ -98,10 +98,15 @@ export class SectionService {
   }
 
   async delete(id: string) {
-    const section = await Section.findByIdAndUpdate(id, { isActive: false });
+    const section = await Section.findByIdAndDelete(id);
     if (!section) throw new NotFoundError("Section");
-    logger.info(`Section deactivated: ${id}`);
-    return { message: "Section deactivated successfully" };
+
+    // Cascading delete associated tables and products
+    await Table.deleteMany({ sectionId: id });
+    await Product.deleteMany({ sectionId: id });
+
+    logger.info(`Section deleted permanently: ${id}`);
+    return { message: "Section deleted permanently" };
   }
 }
 

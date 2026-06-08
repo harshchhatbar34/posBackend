@@ -17,6 +17,7 @@ export class CategoryService {
     const skip = (page - 1) * pageSize;
 
     const where = {
+      isActive: { $ne: false },
       ...(search ? { name: { $regex: search, $options: "i" } } : {}),
     };
 

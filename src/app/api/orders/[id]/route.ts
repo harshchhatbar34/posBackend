@@ -26,7 +26,7 @@ export async function DELETE(request: NextRequest, { params }: RouteParams) {
     await connectToDatabase();
     const user = await authenticate(request);
     const { id } = await params;
-    const result = await orderService.deleteOrder(id, user.id);
+    const result = await orderService.deleteOrder(id, user.id, user.role);
     return successResponse(result, "Order deleted successfully");
   } catch (error) {
     return handleError(error);
